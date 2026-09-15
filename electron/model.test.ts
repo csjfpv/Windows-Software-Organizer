@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyConfig, validateConfig } from './model';
+import { distrustImportedIcons, emptyConfig, validateConfig } from './model';
 
 const validApp = {
   id: 'app-1', categoryId: 'favorites', name: '示例', description: '',
@@ -32,7 +32,33 @@ describe('configuration validation', () => {
 
   it('rejects relative local targets', () => {
     const config = emptyConfig();
-    expect(() => validateConfig({ ...config, apps: [{ ...validApp, target: '.\\App.exe' }] })).toThrow('本地目标必须使用绝对路径');
+    expect(() => validateConfig({ ...config, apps: [{ ...validApp, target: '.\\App.exe' }] })).toThrow('本地目标必须使用盘符开头的本机绝对路径');
+  });
+
+  it.each([
+    String.raw`\\server\share\App.exe`,
+    String.raw`\\?\C:\App.exe`,
+    String.raw`\\.\C:\App.exe`,
+    String.raw`\Windows\App.exe`
+  ])('rejects non-local or drive-less paths: %s', (target) => {
+    const config = emptyConfig();
+    expect(() => validateConfig({ ...config, apps: [{ ...validApp, target }] })).toThrow('本地目标必须使用盘符开头的本机绝对路径');
+  });
+
+  it('rejects UNC paths in optional file-backed fields', () => {
+    const config = emptyConfig();
+    expect(() => validateConfig({ ...config, apps: [{ ...validApp, iconPath: String.raw`\\server\share\icon.png` }] })).toThrow('图标路径必须使用盘符开头');
+    expect(() => validateConfig({ ...config, apps: [{ ...validApp, workingDirectory: String.raw`\\server\share` }] })).toThrow('工作目录必须使用盘符开头');
+  });
+
+  it('defaults legacy icon lookup trust to disabled', () => {
+    const config = validateConfig({ ...emptyConfig(), apps: [validApp] });
+    expect(config.apps[0].iconLookupAllowed).toBe(false);
+  });
+
+  it('overrides imported icon trust regardless of JSON claims', () => {
+    const config = validateConfig({ ...emptyConfig(), apps: [{ ...validApp, iconLookupAllowed: true }] });
+    expect(distrustImportedIcons(config).apps[0].iconLookupAllowed).toBe(false);
   });
 
   it('rejects non-EXE executable targets', () => {

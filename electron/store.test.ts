@@ -19,4 +19,21 @@ describe('ConfigStore', () => {
     await expect(store.load()).resolves.toEqual(second);
     await expect(fs.readFile(path.join(root, 'organizer-config.previous.json'), 'utf8')).resolves.toContain('First');
   });
+
+  it('recovers from a corrupt current file using the previous backup', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'organizer-store-'));
+    roots.push(root);
+    const backup = { ...emptyConfig(), categories: [{ id: 'backup', name: 'Backup', order: 0 }] };
+    await fs.writeFile(path.join(root, 'organizer-config.json'), '{broken', 'utf8');
+    await fs.writeFile(path.join(root, 'organizer-config.previous.json'), JSON.stringify(backup), 'utf8');
+    await expect(new ConfigStore(root).load()).resolves.toEqual(backup);
+  });
+
+  it('reports corruption instead of silently resetting both damaged copies', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'organizer-store-'));
+    roots.push(root);
+    await fs.writeFile(path.join(root, 'organizer-config.json'), '{broken', 'utf8');
+    await fs.writeFile(path.join(root, 'organizer-config.previous.json'), '{also-broken', 'utf8');
+    await expect(new ConfigStore(root).load()).rejects.toThrow('配置文件损坏');
+  });
 });
