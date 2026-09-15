@@ -3,7 +3,8 @@ import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { ConfigStore } from './store';
-import { AppEntry, AppConfig, TargetType, parseConfigJson } from './model';
+import { AppEntry, AppConfig, distrustImportedIcons, TargetType } from './model';
+import { readConfigFile, writeConfigFile } from './config-file';
 
 let mainWindow: BrowserWindow | null = null;
 let store: ConfigStore;
@@ -72,13 +73,13 @@ app.whenReady().then(() => {
   ipcMain.handle('config:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
-    const imported = parseConfigJson(await fs.readFile(result.filePaths[0], 'utf8'));
-    return store.save(imported);
+    const imported = await readConfigFile(result.filePaths[0]);
+    return store.save(distrustImportedIcons(imported));
   });
   ipcMain.handle('config:export', async () => {
     const result = await dialog.showSaveDialog(mainWindow!, { title: '导出配置', defaultPath: 'windows-software-organizer.json', filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePath) return false;
-    await fs.writeFile(result.filePath, JSON.stringify(await store.load(), null, 2), 'utf8'); return true;
+    await writeConfigFile(result.filePath, await store.load()); return true;
   });
   ipcMain.handle('config:reveal', () => shell.openPath(app.getPath('userData')));
   ipcMain.handle('picker:target', async (_event, type: TargetType) => {
@@ -94,6 +95,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('icon:get', async (_event, id: unknown) => {
     const { entry } = await currentEntry(id);
+    if (entry.iconLookupAllowed !== true) return null;
     try {
       if (entry.iconPath) { const image = nativeImage.createFromPath(entry.iconPath); if (!image.isEmpty()) return image.resize({ width: 64, height: 64 }).toDataURL(); }
       if (entry.targetType !== 'url') return (await app.getFileIcon(entry.target, { size: 'large' })).toDataURL();

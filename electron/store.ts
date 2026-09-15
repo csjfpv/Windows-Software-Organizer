@@ -12,11 +12,14 @@ export class ConfigStore {
   }
   async load(): Promise<AppConfig> {
     try { return parseConfigJson(await fs.readFile(this.file, 'utf8')); }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        try { return parseConfigJson(await fs.readFile(this.backup, 'utf8')); } catch { /* use defaults */ }
+    catch (currentError) {
+      try { return parseConfigJson(await fs.readFile(this.backup, 'utf8')); }
+      catch (backupError) {
+        const currentMissing = (currentError as NodeJS.ErrnoException).code === 'ENOENT';
+        const backupMissing = (backupError as NodeJS.ErrnoException).code === 'ENOENT';
+        if (currentMissing && backupMissing) return emptyConfig();
+        throw new Error('配置文件损坏，且无法从上一版备份恢复');
       }
-      return emptyConfig();
     }
   }
   save(value: unknown): Promise<AppConfig> {

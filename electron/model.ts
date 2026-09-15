@@ -18,6 +18,7 @@ export interface AppEntry {
   args: string[];
   workingDirectory: string;
   iconPath: string;
+  iconLookupAllowed?: boolean;
   order: number;
   launchCount: number;
   lastLaunchedAt: string | null;
@@ -29,7 +30,11 @@ export interface AppConfig {
   apps: AppEntry[];
 }
 
-const MAX_CONFIG_BYTES = 2 * 1024 * 1024;
+export const MAX_CONFIG_BYTES = 2 * 1024 * 1024;
+
+export function isLocalDrivePath(value: string): boolean {
+  return /^[a-zA-Z]:[\\/]/.test(value);
+}
 const MAX_CATEGORIES = 100;
 const MAX_APPS = 2000;
 const text = (value: unknown, max: number) => typeof value === 'string' && value.trim().length > 0 && value.length <= max && !value.includes('\0');
@@ -73,11 +78,11 @@ export function validateConfig(value: unknown): AppConfig {
       try { url = new URL(item.target); } catch { throw new Error('网址格式无效'); }
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('只允许 HTTP 或 HTTPS 网址');
     } else {
-      if (!path.win32.isAbsolute(item.target)) throw new Error('本地目标必须使用绝对路径');
+      if (!isLocalDrivePath(item.target)) throw new Error('本地目标必须使用盘符开头的本机绝对路径');
       if (item.targetType === 'executable' && path.win32.extname(item.target).toLocaleLowerCase() !== '.exe') throw new Error('程序目标必须是 EXE 文件');
     }
-    if (item.workingDirectory && !path.win32.isAbsolute(item.workingDirectory)) throw new Error('工作目录必须使用绝对路径');
-    if (item.iconPath && !path.win32.isAbsolute(item.iconPath)) throw new Error('图标路径必须使用绝对路径');
+    if (item.workingDirectory && !isLocalDrivePath(item.workingDirectory)) throw new Error('工作目录必须使用盘符开头的本机绝对路径');
+    if (item.iconPath && !isLocalDrivePath(item.iconPath)) throw new Error('图标路径必须使用盘符开头的本机绝对路径');
     const args = Array.isArray(item.args) ? item.args : [];
     if (args.length > 50 || args.some((arg) => !optionalText(arg, 1000))) throw new Error('启动参数无效');
     return {
@@ -86,12 +91,17 @@ export function validateConfig(value: unknown): AppConfig {
       target: item.target.trim(), targetType: item.targetType, args,
       workingDirectory: optionalText(item.workingDirectory, 2048) ? item.workingDirectory.trim() : '',
       iconPath: optionalText(item.iconPath, 2048) ? item.iconPath.trim() : '',
+      iconLookupAllowed: item.iconLookupAllowed === true,
       order: Number.isFinite(item.order) ? item.order : index,
       launchCount: Number.isSafeInteger(item.launchCount) && item.launchCount >= 0 ? item.launchCount : 0,
       lastLaunchedAt: typeof item.lastLaunchedAt === 'string' ? item.lastLaunchedAt : null
     };
   });
   return { version: 1, categories, apps };
+}
+
+export function distrustImportedIcons(config: AppConfig): AppConfig {
+  return { ...config, apps: config.apps.map((entry) => ({ ...entry, iconLookupAllowed: false })) };
 }
 
 export function parseConfigJson(raw: string): AppConfig {
