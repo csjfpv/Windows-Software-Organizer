@@ -23,7 +23,7 @@ jobs:
         shell: pwsh
         run: Get-ChildItem release -File -Filter "*.exe" | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } | Set-Content release/SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, "refs/tags/")
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: release/*
           generate_release_notes: true

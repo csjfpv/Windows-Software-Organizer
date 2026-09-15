@@ -1,6 +1,6 @@
 {
   "name": "windows-software-organizer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A privacy-first Windows application and project launcher.",
   "main": "dist-electron/main.js",
   "author": "csjfpv",
