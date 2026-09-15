@@ -314,6 +314,11 @@ FakesAssemblies/
 # Node.js Tools for Visual Studio
 .ntvs_analysis.dat
 node_modules/
+dist/
+dist-electron/
+release/
+organizer-config*.json
+*.local.json
 
 # Visual Studio 6 build log
 *.plg
