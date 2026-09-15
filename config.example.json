@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "development",
+      "name": "开发工具",
+      "order": 0
+    }
+  ],
+  "apps": [
+    {
+      "id": "example-editor",
+      "categoryId": "development",
+      "name": "代码编辑器",
+      "description": "示例程序入口",
+      "target": "C:\\Path\\To\\Editor.exe",
+      "targetType": "executable",
+      "args": [],
+      "workingDirectory": "",
+      "iconPath": "",
+      "order": 0,
+      "launchCount": 0,
+      "lastLaunchedAt": null
+    }
+  ]
+}
