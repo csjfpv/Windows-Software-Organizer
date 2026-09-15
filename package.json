@@ -13,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "package:win": "pnpm build && electron-builder --win nsis portable",
+    "package:win": "pnpm build && electron-builder --win nsis portable --publish never",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
