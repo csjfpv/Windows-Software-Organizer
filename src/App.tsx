@@ -151,7 +151,7 @@ function AppCard({ entry, icon, color, dragging, onDragStart, onDrop, onDragEnd,
 }
 
 function AppDialog({ categories, entry, onClose, onSave }: { categories: Category[]; entry: AppEntry | null; onClose(): void; onSave(entry: AppEntry): void }) {
-  const [form, setForm] = useState<AppEntry>(entry ?? { id: uid(), categoryId: categories[0]?.id ?? '', name: '', description: '', target: '', targetType: 'executable', args: [], workingDirectory: '', iconPath: '', iconLookupAllowed: true, order: 0, launchCount: 0, lastLaunchedAt: null });
+  const [form, setForm] = useState<AppEntry>(entry ?? { id: uid(), categoryId: categories[0]?.id ?? '', name: '', description: '', target: '', targetType: 'executable', args: [], workingDirectory: '', iconPath: '', iconLookupAllowed: false, order: 0, launchCount: 0, lastLaunchedAt: null });
   const [argsText, setArgsText] = useState(form.args.join('\n'));
   const update = (patch: Partial<AppEntry>) => setForm((old) => ({ ...old, ...patch }));
   const save = () => { if (!form.name.trim() || !form.target.trim() || !form.categoryId) return; onSave({ ...form, name: form.name.trim(), target: form.target.trim(), args: argsText.split('\n').map((x) => x.trim()).filter(Boolean) }); };
