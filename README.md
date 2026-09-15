@@ -66,7 +66,7 @@ pnpm package:win
 
 ## 项目范围
 
-本项目是通用入口管理器，不分发第三方软件、固件、驱动、破解工具或作者电脑中的任何程序。界面布局受常见桌面工具箱交互模式启发，但不使用其他软件的代码、品牌、图标或素材。
+本项目是独立开发的通用入口管理器，不分发第三方软件、固件、驱动、破解工具或作者电脑中的任何程序。产品名称、源代码、界面实现和项目图标均独立设计；除依法使用的开源依赖外，不使用或复制第三方产品的名称、代码、Logo、图标、截图、文案、工具清单或其他素材。本项目与任何第三方工具箱产品、社区及其权利人不存在隶属、授权、合作或官方认可关系。详细规则参见 [TRADEMARKS.md](TRADEMARKS.md)。
 
 ## 参与贡献
 
@@ -74,4 +74,4 @@ pnpm package:win
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。
+本项目采用 [MIT License](LICENSE)。第三方开源组件的版权与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，界面与图标来源见 [ASSET_SOURCES.md](ASSET_SOURCES.md)，品牌和非关联声明见 [TRADEMARKS.md](TRADEMARKS.md)。
