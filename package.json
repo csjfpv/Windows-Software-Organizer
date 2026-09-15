@@ -1,6 +1,6 @@
 {
   "name": "windows-software-organizer",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A privacy-first Windows application and project launcher.",
   "main": "dist-electron/main.js",
   "author": "csjfpv",
@@ -50,6 +50,12 @@
       "package.json"
     ],
     "asar": true,
+    "extraResources": [
+      { "from": "LICENSE", "to": "notices/LICENSE.txt" },
+      { "from": "THIRD_PARTY_NOTICES.md", "to": "notices/THIRD-PARTY-NOTICES.txt" },
+      { "from": "ASSET_SOURCES.md", "to": "notices/ASSET-SOURCES.txt" },
+      { "from": "TRADEMARKS.md", "to": "notices/TRADEMARKS.txt" }
+    ],
     "win": {
       "target": [
         "nsis",
