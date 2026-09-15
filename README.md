@@ -1,49 +1,73 @@
 # Windows软件整理工具
 
-一款面向 Windows 的本地软件与项目启动中心。界面采用左侧分类、右侧应用面板的桌面工具布局，用于集中管理分散在电脑各处的程序、文件、文件夹和网页入口。
+> 为 Windows 桌面整理程序、文件、项目目录与常用网页的本地启动中心。
 
-> 本项目只管理入口，不移动、复制或上传用户的软件和项目文件。
+Windows软件整理工具将分散在电脑各处的入口集中到一个可分类、可搜索、可排序的桌面界面。它只保存入口信息，不移动、不复制、不上传你的软件、文件或项目。
 
 ![Windows软件整理工具主界面](docs/images/main-window.png)
 
+[下载最新版本](https://github.com/csjfpv/Windows-Software-Organizer/releases/latest) · [查看更新说明](https://github.com/csjfpv/Windows-Software-Organizer/releases) · [提交问题](https://github.com/csjfpv/Windows-Software-Organizer/issues)
+
+## 适用场景
+
+- 为开发工具、设计软件、办公程序建立统一入口
+- 将项目目录、文档、脚本和常用网页按分类整理
+- 为程序保存启动参数和工作目录
+- 用搜索和拖拽排序快速定位高频入口
+
 ## 功能
 
-- 左侧分类导航与数量统计
-- 右侧紧凑应用卡片
-- 按名称、说明和目标文件名搜索
+- 分类导航、数量统计、名称与路径搜索
 - 添加程序、文件、文件夹和 HTTP/HTTPS 网页
-- 编辑和移除入口，不删除本机目标文件
-- 分类增删改、顺序调整和应用卡片拖拽排序
-- 程序启动参数与工作目录
-- 自动读取 Windows 程序图标，支持自定义图标
-- 本地启动次数统计
-- JSON 配置导入与导出
-- 配置原子写入与上一版本地备份
+- 编辑、移除与拖拽排序入口；不会删除本机目标文件
+- 程序启动参数、工作目录和自定义图标路径
+- 本地启动次数统计与 JSON 配置导入/导出
+- 配置原子写入、上一版本地备份和损坏恢复
+- 不需要账号、无云同步、无遥测、无联网扫描
 
-## 隐私
+## 下载与安装
 
-Windows软件整理工具不需要账号，不提供云同步，不包含遥测，也不会扫描并上传用户的软件列表。
+在 [Releases](https://github.com/csjfpv/Windows-Software-Organizer/releases/latest) 页面下载：
 
-用户添加的数据仅保存在 Electron 的本机用户数据目录。仓库中的演示配置只使用通用占位路径，不包含开发者电脑的软件清单、用户名、聊天记录或私有项目路径。
+| 文件 | 用途 |
+| --- | --- |
+| `Windows-Software-Organizer-Setup.exe` | Windows 安装版，可选择安装目录。 |
+| `Windows-Software-Organizer-Portable.exe` | 便携版，无需安装。 |
+| `SHA256SUMS.txt` | 两个 EXE 的 SHA-256 校验值。 |
 
-详细说明参见 [PRIVACY.md](PRIVACY.md) 和 [SECURITY.md](SECURITY.md)。导出的 JSON 可能包含本机路径和启动参数，公开分享前必须先脱敏。
+发布页同时提供许可证、第三方开源声明、素材来源和品牌政策。安装包目前**未配置商业代码签名证书**，Windows SmartScreen 可能显示“未知发布者”；请仅从本仓库 Releases 下载，并按 SHA-256 校验文件核验安装包。
 
-## 安装与使用
+## 快速开始
 
-正式版本可在 GitHub Releases 下载 Windows 安装版、便携版和 SHA-256 校验文件。首次打开时列表为空，点击“添加项目”选择目标类型和分类即可。导入第三方配置前请检查目标路径和启动参数；为避免导入时触发网络共享连接，本地目标、工作目录和图标仅接受带盘符的本机绝对路径。
+1. 打开应用后，点击“添加项目”。
+2. 选择程序、文件、文件夹或网页，并填写分类。
+3. 需要时填写启动参数与工作目录。
+4. 保存后可搜索、排序或直接打开入口。
 
-当前自动构建未配置商业代码签名证书，Windows SmartScreen 可能显示未知发布者。发布页会明确标注签名状态；维护者配置可信证书后才会声明构建已签名。
+首次使用时列表为空。应用不会自动扫描或上传你的软件清单。
+
+## 配置与安全
+
+配置仅保存在 Electron 的本机用户数据目录。导出的 JSON 可能包含本机路径与启动参数，分享前请先脱敏。
+
+- 导入配置上限为 2 MB、100 个分类和 2,000 个应用
+- UNC、设备路径和无盘符根路径会被拒绝
+- 导入条目、旧配置条目和新建条目的文件图标预览默认关闭
+- 只有用户在编辑时明确启用“本地图标预览”，应用才会访问对应目标或图标路径
+- 配置主文件损坏时会尝试使用上一版备份恢复；双份损坏会显示错误，不会静默覆盖
+
+完整安全设计见 [SECURITY.md](SECURITY.md)，隐私说明见 [PRIVACY.md](PRIVACY.md)。
 
 ## 本地开发
 
-环境要求：Windows 10/11、Node.js 20+、pnpm 9+。
+环境要求：Windows 10/11、Node.js 20+、pnpm 11+。
 
 ```powershell
 pnpm install
 pnpm dev
 ```
 
-质量检查和构建：
+质量检查与 Windows 打包：
 
 ```powershell
 pnpm lint
@@ -52,27 +76,16 @@ pnpm build
 pnpm package:win
 ```
 
-构建结果默认写入 `release/`，该目录不会提交到 Git。
-
-## 安全设计
-
-- Electron 渲染进程启用 `contextIsolation` 和沙箱，禁用 Node.js 集成
-- 预加载层只暴露明确的配置、文件选择和启动 API
-- 渲染进程只能按已保存的应用 ID 请求启动
-- 程序启动使用参数数组和 `shell: false`，不拼接 shell 命令
-- 网页入口仅允许 `http:` 和 `https:`
-- 导入配置限制为 2 MB、100 个分类和 2,000 个应用
-- 配置更新前保留上一版本地备份
-- 导入条目默认不读取文件图标，需用户明确启用本地图标预览
-
-## 项目范围
-
-本项目是独立开发的通用入口管理器，不分发第三方软件、固件、驱动、破解工具或作者电脑中的任何程序。产品名称、源代码、界面实现和项目图标均独立设计；除依法使用的开源依赖外，不使用或复制第三方产品的名称、代码、Logo、图标、截图、文案、工具清单或其他素材。本项目与任何第三方工具箱产品、社区及其权利人不存在隶属、授权、合作或官方认可关系。详细规则参见 [TRADEMARKS.md](TRADEMARKS.md)。
+构建产物默认写入 `release/`，不提交到 Git。
 
 ## 参与贡献
 
-欢迎通过 Issue 报告问题，通过 Pull Request 提交改进。请勿提交本机配置、绝对路径、日志、软件安装包、证书、密钥或个人数据。
+欢迎通过 [Issues](https://github.com/csjfpv/Windows-Software-Organizer/issues) 报告问题，通过 Pull Request 提交改进。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。不要提交本机配置、绝对路径、日志、软件安装包、证书、密钥或个人数据。
+
+## 项目边界
+
+本项目是独立开发的通用 Windows 入口管理器，不分发第三方软件、固件、驱动、破解工具或维护者电脑中的任何程序。项目名称、源代码、界面实现和项目图标均独立设计；不使用或复制第三方产品的名称、代码、Logo、图标、截图、文案、工具清单或其他素材。本项目与任何第三方工具箱产品、社区及其权利人不存在隶属、授权、合作、赞助或官方认可关系。详情见 [TRADEMARKS.md](TRADEMARKS.md)。
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。第三方开源组件的版权与许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，界面与图标来源见 [ASSET_SOURCES.md](ASSET_SOURCES.md)，品牌和非关联声明见 [TRADEMARKS.md](TRADEMARKS.md)。
+本项目采用 [MIT License](LICENSE)。第三方开源组件许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，界面与图标来源见 [ASSET_SOURCES.md](ASSET_SOURCES.md)。
