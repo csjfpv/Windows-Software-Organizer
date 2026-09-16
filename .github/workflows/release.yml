@@ -26,19 +26,19 @@ jobs:
           if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") {
             throw "Tag '${{ github.ref_name }}' does not match package version '$version'."
           }
-          Copy-Item "release/Windows软件整理工具 $version.exe" 'release/Windows-Software-Organizer-Portable.exe'
-          Copy-Item "release/Windows软件整理工具 Setup $version.exe" 'release/Windows-Software-Organizer-Setup.exe'
+          Copy-Item "release/软件启动台 $version.exe" 'release/Software-Launchpad-Portable.exe'
+          Copy-Item "release/软件启动台 Setup $version.exe" 'release/Software-Launchpad-Setup.exe'
           Copy-Item 'LICENSE' 'release/LICENSE.txt'
           Copy-Item 'THIRD_PARTY_NOTICES.md' 'release/THIRD-PARTY-NOTICES.txt'
           Copy-Item 'ASSET_SOURCES.md' 'release/ASSET-SOURCES.txt'
           Copy-Item 'TRADEMARKS.md' 'release/TRADEMARKS.txt'
-          Get-ChildItem release -File -Filter 'Windows-Software-Organizer-*.exe' | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } | Set-Content release/SHA256SUMS.txt
+          Get-ChildItem release -File -Filter 'Software-Launchpad-*.exe' | Get-FileHash -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } | Set-Content release/SHA256SUMS.txt
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            release/Windows-Software-Organizer-Portable.exe
-            release/Windows-Software-Organizer-Setup.exe
+            release/Software-Launchpad-Portable.exe
+            release/Software-Launchpad-Setup.exe
             release/SHA256SUMS.txt
             release/LICENSE.txt
             release/THIRD-PARTY-NOTICES.txt
@@ -50,8 +50,8 @@ jobs:
         with:
           name: windows-software-organizer
           path: |
-            release/Windows-Software-Organizer-Portable.exe
-            release/Windows-Software-Organizer-Setup.exe
+            release/Software-Launchpad-Portable.exe
+            release/Software-Launchpad-Setup.exe
             release/SHA256SUMS.txt
             release/LICENSE.txt
             release/THIRD-PARTY-NOTICES.txt

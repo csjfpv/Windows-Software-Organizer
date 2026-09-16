@@ -108,7 +108,7 @@ export default function App() {
   return <div className="app-shell">
     <header className="titlebar">
       <div className="brand-mark"><Boxes size={21} /></div>
-      <div><strong>Windows软件整理工具</strong><span>本地应用与项目启动中心</span></div>
+      <div><strong>软件启动台</strong><span>本地应用与项目启动中心</span></div>
       <div className="title-actions">
         <button className="icon-button" title="导入配置" onClick={async () => { try { const value = await window.organizer?.importConfig(); if (value) { setConfig(value); setSelected('all'); setQuery(''); setDialog(null); setIcons({}); flash('配置已导入'); } } catch (e) { flash(e instanceof Error ? e.message : '导入失败'); } }}><Import size={18} /></button>
         <button className="icon-button" title="导出配置" onClick={() => void runAction(async () => { if (await window.organizer?.exportConfig()) flash('配置已导出'); }, '导出失败')}><Upload size={18} /></button>

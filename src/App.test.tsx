@@ -15,7 +15,7 @@ const organizerMock = (overrides: Partial<OrganizerApi>): OrganizerApi => ({
   ...overrides
 });
 
-describe('Windows软件整理工具', () => {
+describe('软件启动台', () => {
   beforeEach(() => localStorage.clear());
 
   it('renders the categorized launcher shell', async () => {
