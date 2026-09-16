@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { executeManagedMove, MoveJournalStore, planManagedMove } from './managed-storage';
+import { executeManagedMove, MoveJournalStore, planManagedMove, recoveryAction, validateJournal } from './managed-storage';
 
 const describeWindows = process.platform === 'win32' ? describe : describe.skip;
 const roots: string[] = [];
@@ -40,6 +40,32 @@ describeWindows('managed storage', () => {
     const operation = await executeManagedMove(plan);
     expect(await fs.readFile(path.join(plan.destination, 'readme.txt'), 'utf8')).toBe('verified');
     await operation.rollback(); expect(await fs.readFile(path.join(source, 'readme.txt'), 'utf8')).toBe('verified');
+  });
+
+  it('keeps a named old copy after a cross-volume commit', async () => {
+    const root = await fixture(); const source = path.join(root, 'portable-tool'); const destinationRoot = path.join(root, 'managed', '应用本体'); const destination = path.join(destinationRoot, 'portable-tool');
+    await fs.mkdir(source, { recursive: true }); await fs.writeFile(path.join(source, 'readme.txt'), 'verified');
+    const plan = { eligible: true, reason: 'test', source, sourceRoot: source, destinationRoot, destination, resultingTarget: destination, resultingType: 'folder' as const, workingDirectory: '', bucket: '应用本体', crossVolume: true };
+    const operation = await executeManagedMove(plan);
+    await operation.commit();
+    expect(await fs.readFile(path.join(destination, 'readme.txt'), 'utf8')).toBe('verified');
+    expect(await fs.readFile(path.join(source + '.启动台迁移旧副本', 'readme.txt'), 'utf8')).toBe('verified');
+    expect(await fs.stat(source).catch(() => null)).toBeNull();
+  });
+
+  it('never rolls back after the configuration commit boundary', () => {
+    expect(recoveryAction('prepared', true)).toBe('rollback-uncommitted');
+    expect(recoveryAction('moved', true)).toBe('rollback-uncommitted');
+    expect(recoveryAction('config-commit-intent', true)).toBe('resume-committed');
+    expect(recoveryAction('config-saved', true)).toBe('resume-committed');
+    expect(recoveryAction('completed', true)).toBe('resume-committed');
+    expect(recoveryAction('config-commit-intent', false)).toBe('manual-intervention');
+    expect(recoveryAction('config-saved', false)).toBe('manual-intervention');
+  });
+
+  it('rejects malformed or out-of-root journal paths', () => {
+    expect(() => validateJournal({})).toThrow('迁移日志格式无效');
+    expect(() => validateJournal({ id: 'move-1', phase: 'prepared', plan: { bucket: '应用本体', sourceRoot: String.raw`C:\source`, destinationRoot: String.raw`C:\managed\应用本体`, destination: String.raw`D:\outside`, eligible: true }, originalConfig: {}, nextConfig: {}, createdAt: new Date().toISOString() })).toThrow('迁移日志路径无效');
   });
 
   it('persists and clears a relocation journal', async () => {

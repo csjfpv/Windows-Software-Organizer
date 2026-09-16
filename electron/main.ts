@@ -6,7 +6,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { ConfigStore } from './store';
 import { AppEntry, AppConfig, distrustImportedIcons, TargetType, validateConfig } from './model';
-import { executeManagedMove, ManagedPlan, MoveJournalStore, planManagedMove } from './managed-storage';
+import { executeManagedMove, ManagedPlan, MoveJournalStore, planManagedMove, recoveryAction } from './managed-storage';
 
 const execFileAsync = promisify(execFile);
 type DiscoveredApp = { name: string; target: string; workingDirectory: string };
@@ -18,6 +18,7 @@ let store: ConfigStore;
 let moveJournal: MoveJournalStore;
 let userDataPath = '';
 let moveInProgress = false;
+let configMutationQueue: Promise<void> = Promise.resolve();
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -120,8 +121,25 @@ function relocatedEntry(entry: AppEntry, plan: ManagedPlan): AppEntry {
   return { ...entry, target: plan.resultingTarget, targetType: plan.resultingType, workingDirectory: plan.workingDirectory, iconPath };
 }
 
+async function withConfigMutationLock<T>(action: () => Promise<T>): Promise<T> {
+  const previous = configMutationQueue;
+  let release!: () => void;
+  configMutationQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try { return await action(); }
+  finally { release(); }
+}
+
+async function assertNoActiveMove() {
+  if (moveInProgress || await moveJournal.load()) throw new Error('收纳任务处理中，暂时不能修改启动台配置');
+}
+
 async function transactMove(originalConfig: AppConfig, nextConfig: AppConfig, plan: ManagedPlan) {
-  if (moveInProgress || await moveJournal.load()) throw new Error('已有收纳任务正在处理，请稍后重试');
+  return withConfigMutationLock(() => transactMoveLocked(originalConfig, nextConfig, plan));
+}
+
+async function transactMoveLocked(originalConfig: AppConfig, nextConfig: AppConfig, plan: ManagedPlan) {
+  await assertNoActiveMove();
   moveInProgress = true;
   try {
     const active = await runningProcesses(plan.sourceRoot);
@@ -133,12 +151,20 @@ async function transactMove(originalConfig: AppConfig, nextConfig: AppConfig, pl
     catch (error) { await moveJournal.clear().catch(() => undefined); throw error; }
     try {
       await moveJournal.save({ ...journal, phase: 'moved' });
+      await moveJournal.save({ ...journal, phase: 'config-commit-intent' });
       const saved = await store.save(nextConfig);
       await moveJournal.save({ ...journal, phase: 'config-saved' });
-      await operation.commit();
-      await moveJournal.clear();
-      return saved;
+      try {
+        await operation.commit();
+        await moveJournal.save({ ...journal, phase: 'completed' });
+        await moveJournal.clear();
+        return saved;
+      } catch (error) {
+        throw new Error('入口已更新到新位置，旧副本尚未完成处理。请打开启动台恢复该事务：' + (error instanceof Error ? error.message : '未知错误'));
+      }
     } catch (error) {
+      const phase = await moveJournal.load().then((value) => value?.phase).catch(() => null);
+      if (phase === 'config-commit-intent' || phase === 'config-saved' || phase === 'completed') throw error;
       await operation.rollback().catch(() => undefined);
       await store.save(originalConfig).catch(() => undefined);
       await moveJournal.clear().catch(() => undefined);
@@ -157,23 +183,23 @@ async function recoverMove() {
   if (!allowedBuckets.has(journal.plan.bucket) || !relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('迁移日志中的目标路径无效，请打开配置目录检查日志');
   const destinationExists = Boolean(await fs.stat(journal.plan.destination).catch(() => null));
   const sourceExists = Boolean(await fs.stat(journal.plan.sourceRoot).catch(() => null));
-  if (journal.phase === 'config-saved' && destinationExists) {
+  const action = recoveryAction(journal.phase, destinationExists);
+  if (action === 'manual-intervention') throw new Error('迁移已提交但新位置缺失；为防止覆盖数据，启动台不会自动恢复，请检查事务记录');
+  if (action === 'resume-committed') {
     await store.save(journal.nextConfig);
     if (sourceExists && journal.plan.crossVolume) {
       const retired = journal.plan.sourceRoot + '.启动台迁移旧副本';
+      if (await fs.stat(retired).catch(() => null)) throw new Error('迁移已提交，但旧副本位置已存在；请打开配置目录检查事务记录');
       await fs.rename(journal.plan.sourceRoot, retired);
-      await fs.rm(retired, { recursive: true, force: true }).catch(() => undefined);
     }
-  } else if (destinationExists && !sourceExists) {
-    await fs.rename(journal.plan.destination, journal.plan.sourceRoot);
-    await store.save(journal.originalConfig);
-  } else {
-    if (destinationExists && sourceExists) await fs.rm(journal.plan.destination, { recursive: true, force: true });
-    await store.save(journal.originalConfig);
+    await moveJournal.clear();
+    return;
   }
+  if (destinationExists && !sourceExists) await fs.rename(journal.plan.destination, journal.plan.sourceRoot);
+  else if (destinationExists && sourceExists) throw new Error('未提交事务同时存在源位置和目标位置；为防止删除无关数据，启动台不会自动处理，请检查事务记录');
+  await store.save(journal.originalConfig);
   await moveJournal.clear();
 }
-
 async function currentEntry(id: unknown): Promise<{ config: AppConfig; entry: AppEntry }> {
   if (typeof id !== 'string' || id.length > 100) throw new Error('应用 ID 无效');
   const config = await store.load();
@@ -216,18 +242,18 @@ app.whenReady().then(async () => {
   moveJournal = new MoveJournalStore(path.join(userDataPath, 'managed-move-journal.json'));
   await recoverMove();
   ipcMain.handle('config:get', () => store.load());
-  ipcMain.handle('config:save', (_event, config) => store.save(config));
+  ipcMain.handle('config:save', async (_event, config) => withConfigMutationLock(async () => { await assertNoActiveMove(); return store.save(config); }));
   ipcMain.handle('config:path', () => store.configPath());
   ipcMain.handle('apps:discover-start-menu', () => discoverStartMenuApps());
   ipcMain.handle('path:resolve', (_event, value: unknown) => resolveLocalPath(value));
   ipcMain.handle('managed:root:get', () => managedRoot());
-  ipcMain.handle('managed:root:choose', async () => {
-    if (moveInProgress || await moveJournal.load()) throw new Error('收纳任务处理中，暂时不能更改目录');
+  ipcMain.handle('managed:root:choose', async () => withConfigMutationLock(async () => {
+    await assertNoActiveMove();
     const result = await dialog.showOpenDialog(mainWindow!, { title: '选择启动台统一收纳目录', defaultPath: await managedRoot(), properties: ['openDirectory', 'createDirectory'] });
     if (result.canceled || !result.filePaths[0]) return null;
     const root = path.resolve(result.filePaths[0]);
     await fs.mkdir(root, { recursive: true }); await saveManagedRoot(root); return root;
-  });
+  }));
   ipcMain.handle('managed:preview', async (_event, item: unknown, categoryName: unknown) => {
     if (!item || typeof item !== 'object' || typeof categoryName !== 'string') throw new Error('收纳预检参数无效');
     const value = item as Partial<ResolvedPath>;
@@ -235,6 +261,7 @@ app.whenReady().then(async () => {
     return previewMove(value.target, value.targetType as Exclude<TargetType, 'url'>, categoryName.slice(0, 40));
   });
   ipcMain.handle('managed:add', async (_event, rawEntry: unknown, _categoryName: unknown) => {
+    return withConfigMutationLock(async () => {
     const original = await store.load();
     const candidate = validateConfig({ ...original, apps: [...original.apps, rawEntry] });
     const entry = candidate.apps.at(-1)!;
@@ -245,7 +272,8 @@ app.whenReady().then(async () => {
     const plan = await planManagedMove({ target: entry.target, targetType: entry.targetType, categoryName, managedRoot: await managedRoot(), preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
     if (!plan.eligible) throw new Error(plan.reason);
     const next = validateConfig({ ...original, apps: [...original.apps, relocatedEntry(entry, plan)] });
-    return transactMove(original, next, plan);
+    return transactMoveLocked(original, next, plan);
+    });
   });
   ipcMain.handle('managed:preview-existing', async () => {
     const config = await store.load(); const processes = await processPaths(); const root = await managedRoot(); const result = [];
@@ -256,21 +284,22 @@ app.whenReady().then(async () => {
     }
     return result;
   });
-  ipcMain.handle('managed:move-existing', async (_event, id: unknown) => {
+  ipcMain.handle('managed:move-existing', async (_event, id: unknown) => withConfigMutationLock(async () => {
     const { config: original, entry } = await currentEntry(id);
     if (entry.targetType === 'url') throw new Error('网页入口不能移动');
     const categoryName = original.categories.find((category) => category.id === entry.categoryId)?.name ?? '';
     const plan = await planManagedMove({ target: entry.target, targetType: entry.targetType, categoryName, managedRoot: await managedRoot(), preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
     if (!plan.eligible) throw new Error(plan.reason);
     const next = validateConfig({ ...original, apps: original.apps.map((item) => item.id === entry.id ? relocatedEntry(item, plan) : item) });
-    return transactMove(original, next, plan);
-  });
-  ipcMain.handle('config:import', async () => {
+    return transactMoveLocked(original, next, plan);
+  }));
+  ipcMain.handle('config:import', async () => withConfigMutationLock(async () => {
+    await assertNoActiveMove();
     const result = await dialog.showOpenDialog(mainWindow!, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
     const imported = await readConfigFile(result.filePaths[0]);
     return store.save(distrustImportedIcons(imported));
-  });
+  }));
   ipcMain.handle('config:export', async () => {
     const result = await dialog.showSaveDialog(mainWindow!, { title: '导出配置', defaultPath: 'windows-software-organizer.json', filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePath) return false;
@@ -297,12 +326,13 @@ app.whenReady().then(async () => {
     } catch { /* renderer uses fallback */ }
     return null;
   });
-  ipcMain.handle('launcher:launch', async (_event, id: unknown) => {
+  ipcMain.handle('launcher:launch', async (_event, id: unknown) => withConfigMutationLock(async () => {
+    await assertNoActiveMove();
     const { config, entry } = await currentEntry(id);
     await launchEntry(entry);
     entry.launchCount += 1; entry.lastLaunchedAt = new Date().toISOString();
     await store.save(config); return { launchCount: entry.launchCount, lastLaunchedAt: entry.lastLaunchedAt };
-  });
+  }));
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
 });

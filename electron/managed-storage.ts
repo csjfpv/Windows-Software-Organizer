@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import type { TargetType } from './model';
@@ -85,7 +86,7 @@ export async function planManagedMove(input: { target: string; targetType: Exclu
       base.workingDirectory = destination;
     } else base.resultingTarget = destination;
   } else base.resultingTarget = destination;
-  return { ...base, eligible: true, reason: base.crossVolume ? '将复制并校验后删除原位置' : '将在同一磁盘内安全移动' };
+  return { ...base, eligible: true, reason: base.crossVolume ? '将复制并校验，入口切换后保留一个旧副本' : '将在同一磁盘内安全移动' };
 }
 
 async function rejectLinks(root: string): Promise<void> {
@@ -94,17 +95,16 @@ async function rejectLinks(root: string): Promise<void> {
   if (!stat.isDirectory()) return;
   for (const item of await fs.readdir(root)) await rejectLinks(path.join(root, item));
 }
-
-async function measure(root: string): Promise<{ files: number; bytes: number }> {
+async function manifest(root: string, relative = ''): Promise<string[]> {
   const linkStat = await fs.lstat(root);
   if (linkStat.isSymbolicLink()) throw new Error('内容包含符号链接或目录联接点，第一版拒绝移动');
-  const stat = await fs.stat(root);
-  if (stat.isFile()) return { files: 1, bytes: stat.size };
-  let files = 0; let bytes = 0;
-  for (const item of await fs.readdir(root, { withFileTypes: true })) {
-    const child = await measure(path.join(root, item.name)); files += child.files; bytes += child.bytes;
+  if (linkStat.isFile()) {
+    const content = await fs.readFile(root);
+    return [relative + '\u0000' + linkStat.size + '\u0000' + createHash('sha256').update(content).digest('hex')];
   }
-  return { files, bytes };
+  const records: string[] = [];
+  for (const item of await fs.readdir(root, { withFileTypes: true })) records.push(...await manifest(path.join(root, item.name), relative ? path.join(relative, item.name) : item.name));
+  return records.sort();
 }
 
 export async function executeManagedMove(plan: ManagedPlan): Promise<{ rollback(): Promise<void>; commit(): Promise<void> }> {
@@ -118,43 +118,61 @@ export async function executeManagedMove(plan: ManagedPlan): Promise<{ rollback(
   const staging = plan.destination + '.启动台迁移中';
   await fs.rm(staging, { recursive: true, force: true });
   await fs.cp(plan.sourceRoot, staging, { recursive: true, errorOnExist: true, force: false });
-  const [before, after] = await Promise.all([measure(plan.sourceRoot), measure(staging)]);
-  if (before.files !== after.files || before.bytes !== after.bytes) { await fs.rm(staging, { recursive: true, force: true }); throw new Error('复制校验失败，原文件保持不变'); }
+  const [before, after] = await Promise.all([manifest(plan.sourceRoot), manifest(staging)]);
+  if (before.length !== after.length || before.some((record, index) => record !== after[index])) { await fs.rm(staging, { recursive: true, force: true }); throw new Error('复制校验失败，原文件保持不变'); }
   await fs.rename(staging, plan.destination);
   return {
     rollback: async () => { await fs.rm(plan.destination, { recursive: true, force: true }); },
     commit: async () => {
       const retired = plan.sourceRoot + '.启动台迁移旧副本';
+      if (await fs.stat(retired).catch(() => null)) throw new Error('迁移已提交，但旧副本位置已存在；请在恢复记录中人工处理');
       await fs.rename(plan.sourceRoot, retired);
-      await fs.rm(retired, { recursive: true, force: true }).catch(() => undefined);
     }
   };
 }
 
+export type RecoveryAction = 'rollback-uncommitted' | 'resume-committed' | 'manual-intervention';
+export function recoveryAction(phase: MoveJournal['phase'], destinationExists: boolean): RecoveryAction {
+  if (phase === 'config-commit-intent' || phase === 'config-saved' || phase === 'completed') return destinationExists ? 'resume-committed' : 'manual-intervention';
+  return 'rollback-uncommitted';
+}
+
 export type MoveJournal = {
   id: string;
-  phase: 'prepared' | 'moved' | 'config-saved' | 'completed';
+  phase: 'prepared' | 'moved' | 'config-commit-intent' | 'config-saved' | 'completed';
   plan: ManagedPlan;
   originalConfig: unknown;
   nextConfig: unknown;
   createdAt: string;
 };
 
+export function validateJournal(value: unknown): MoveJournal {
+  if (!value || typeof value !== 'object') throw new Error('迁移日志格式无效');
+  const journal = value as Partial<MoveJournal>;
+  const phases = new Set(['prepared', 'moved', 'config-commit-intent', 'config-saved', 'completed']);
+  if (typeof journal.id !== 'string' || !phases.has(journal.phase ?? '') || !journal.plan || typeof journal.plan !== 'object') throw new Error('迁移日志格式无效');
+  const plan = journal.plan as ManagedPlan;
+  const buckets = ['应用本体', '项目源码', '项目产出软件', '资料'];
+  if (!buckets.includes(plan.bucket) || !/^[a-zA-Z]:[\\/]/.test(plan.sourceRoot) || !/^[a-zA-Z]:[\\/]/.test(plan.destination) || !/^[a-zA-Z]:[\\/]/.test(plan.destinationRoot) || !plan.destination.toLocaleLowerCase().startsWith((plan.destinationRoot + path.sep).toLocaleLowerCase())) throw new Error('迁移日志路径无效');
+  return journal as MoveJournal;
+}
+
 export class MoveJournalStore {
   private readonly backup: string;
   constructor(private readonly file: string) { this.backup = file + '.previous'; }
   async load(): Promise<MoveJournal | null> {
-    try { return JSON.parse(await fs.readFile(this.file, 'utf8')) as MoveJournal; }
+    try { return validateJournal(JSON.parse(await fs.readFile(this.file, 'utf8'))); }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-      try { return JSON.parse(await fs.readFile(this.backup, 'utf8')) as MoveJournal; }
+      try { return validateJournal(JSON.parse(await fs.readFile(this.backup, 'utf8'))); }
       catch (backupError) { if ((backupError as NodeJS.ErrnoException).code === 'ENOENT') return null; throw backupError; }
     }
   }
   async save(value: MoveJournal) {
     await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const temporary = this.file + '.tmp';
-    await fs.writeFile(temporary, JSON.stringify(value, null, 2), 'utf8');
+    const temporary = this.file + '.' + randomUUID() + '.tmp';
+    const handle = await fs.open(temporary, 'w');
+    try { await handle.writeFile(JSON.stringify(value, null, 2), 'utf8'); await handle.sync(); } finally { await handle.close(); }
     await fs.rm(this.backup, { force: true });
     try { await fs.rename(this.file, this.backup); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     await fs.rename(temporary, this.file);
