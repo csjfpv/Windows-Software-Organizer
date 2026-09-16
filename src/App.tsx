@@ -4,7 +4,7 @@ import { demoConfig } from './demo';
 import { AgentPromptDialog } from './AgentPromptDialog';
 import { DiscoveryDialog } from './DiscoveryDialog';
 import { QuickAddDialog } from './QuickAddDialog';
-import type { AppConfig, AppEntry, Category, DiscoveredApp, ResolvedPath, TargetType } from './types';
+import type { AppConfig, AppEntry, Category, DiscoveredApp, ManagedMovePlan, ResolvedPath, TargetType } from './types';
 
 const uid = () => crypto.randomUUID();
 const typeLabel: Record<TargetType, string> = { executable: '程序', file: '文件', folder: '文件夹', url: '网页' };
@@ -21,7 +21,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(demoConfig);
   const [selected, setSelected] = useState('all');
   const [query, setQuery] = useState('');
-  const [dialog, setDialog] = useState<'app' | 'quick-add' | 'agent-prompt' | 'category' | 'discovery' | 'settings' | null>(null);
+  const [dialog, setDialog] = useState<'app' | 'quick-add' | 'agent-prompt' | 'category' | 'discovery' | 'settings' | 'managed-existing' | null>(null);
   const [editingApp, setEditingApp] = useState<AppEntry | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [icons, setIcons] = useState<Record<string, string>>({});
@@ -89,18 +89,22 @@ export default function App() {
     } catch (error) { flash(error instanceof Error ? error.message : '启动失败'); }
   };
   const removeApp = async (entry: AppEntry) => { if (confirm('从整理工具中移除“' + entry.name + '”？本机程序不会被删除。')) await runAction(() => persist({ ...config, apps: config.apps.filter((item) => item.id !== entry.id) }), '移除失败'); };
-  const addResolvedPath = async (item: ResolvedPath, requestedCategoryId: string) => {
-    const filesCategory = item.targetType === 'file' && !config.categories.some((category) => category.name.includes('文件')) ? { id: uid(), name: '文件资料', order: config.categories.length } : null;
-    const categoryId = filesCategory?.id ?? requestedCategoryId;
+  const addResolvedPath = async (item: ResolvedPath, requestedCategoryId: string, move = false) => {
+    const categoryId = requestedCategoryId;
     const order = config.apps.filter((entry) => entry.categoryId === categoryId).length;
     const description = item.targetType === 'folder' ? '文件夹入口' : item.targetType === 'file' ? '文件入口' : '程序入口';
     const entry: AppEntry = { id: uid(), categoryId, name: item.name, description, target: item.target, targetType: item.targetType, args: [], workingDirectory: item.workingDirectory, iconPath: '', iconLookupAllowed: true, order, launchCount: 0, lastLaunchedAt: null };
-    await persist({ ...config, categories: filesCategory ? [...config.categories, filesCategory] : config.categories, apps: [...config.apps, entry] });
+    if (move && window.organizer) {
+      const categoryName = config.categories.find((category) => category.id === categoryId)?.name ?? '';
+      const saved = await window.organizer.managedAdd(entry, categoryName);
+      setConfig(saved);
+    } else await persist({ ...config, apps: [...config.apps, entry] });
     setDialog(null);
-    flash('已收纳“' + entry.name + '”，现在可以直接打开');
+    flash(move ? '已移动并收纳“' + entry.name + '”' : '已添加“' + entry.name + '”入口');
   };
 
   const handleQuickAdd = (item: ResolvedPath, categoryId: string) => void runAction(() => addResolvedPath(item, categoryId), '添加路径失败');
+  const handleManagedAdd = (item: ResolvedPath, categoryId: string) => void runAction(() => addResolvedPath(item, categoryId, true), '收纳并移动失败');
   const enableOriginalIcons = async () => {
     const eligible = config.apps.filter((entry) => entry.targetType !== 'url' && entry.iconLookupAllowed !== true);
     if (!eligible.length) return flash('当前本地入口已使用原软件图标');
@@ -157,11 +161,12 @@ export default function App() {
       </main>
     </div>
     {dialog === 'agent-prompt' && <AgentPromptDialog categories={categories} onClose={() => setDialog(null)} />}
-    {dialog === 'quick-add' && <QuickAddDialog categories={categories} onClose={() => setDialog(null)} onAdd={handleQuickAdd} />}
+    {dialog === 'quick-add' && <QuickAddDialog categories={categories} onClose={() => setDialog(null)} onAdd={handleQuickAdd} onManagedAdd={handleManagedAdd} />}
     {dialog === 'app' && <AppDialog categories={categories} entry={editingApp} onClose={() => setDialog(null)} onSave={(entry) => void runAction(async () => { const exists = config.apps.some((x) => x.id === entry.id); const savedEntry = exists ? entry : { ...entry, order: config.apps.filter((item) => item.categoryId === entry.categoryId).length }; await persist({ ...config, apps: exists ? config.apps.map((x) => x.id === entry.id ? savedEntry : x) : [...config.apps, savedEntry] }); setDialog(null); flash(exists ? '项目已更新' : '项目已添加'); }, '保存项目失败')} />}
     {dialog === 'discovery' && <DiscoveryDialog categories={categories} existingTargets={new Set(config.apps.map((entry) => entry.target.toLocaleLowerCase()))} onClose={() => setDialog(null)} onAdd={(items, categoryId) => void runAction(async () => { const offset = config.apps.filter((entry) => entry.categoryId === categoryId).length; const additions = items.map((item, index) => ({ id: uid(), categoryId, name: item.name, description: '来自开始菜单', target: item.target, targetType: 'executable' as const, args: [], workingDirectory: item.workingDirectory, iconPath: '', iconLookupAllowed: true, order: offset + index, launchCount: 0, lastLaunchedAt: null })); await persist({ ...config, apps: [...config.apps, ...additions] }); setDialog(null); flash('已添加 ' + additions.length + ' 个软件，并启用原软件图标'); }, '添加软件失败')} />}
     {dialog === 'category' && <CategoryDialog category={editingCategory} onClose={() => setDialog(null)} onDelete={editingCategory ? () => void removeCategory(editingCategory) : undefined} onSave={(category) => void runAction(async () => { const exists = config.categories.some((x) => x.id === category.id); await persist({ ...config, categories: exists ? config.categories.map((x) => x.id === category.id ? category : x) : [...config.categories, category] }); setDialog(null); }, '保存分类失败')} />}
-    {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} onReveal={() => void runAction(async () => { await window.organizer?.revealConfig(); }, '打开配置目录失败')} onReset={() => void runAction(async () => { if (confirm('清空当前列表并恢复默认分类？')) { await persist({ ...demoConfig, apps: [] }); setDialog(null); } }, '重置失败')} />}
+    {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} onManage={() => setDialog('managed-existing')} onReveal={() => void runAction(async () => { await window.organizer?.revealConfig(); }, '打开配置目录失败')} onReset={() => void runAction(async () => { if (confirm('清空当前列表并恢复默认分类？')) { await persist({ ...demoConfig, apps: [] }); setDialog(null); } }, '重置失败')} />}
+    {dialog === 'managed-existing' && <ManagedExistingDialog onClose={() => setDialog(null)} onChanged={(saved) => { setConfig(saved); setIcons({}); flash('入口已移动并更新'); }} />}
     {notice && <div className="toast">{notice}</div>}
   </div>;
 }
@@ -194,4 +199,17 @@ function CategoryDialog({ category, onClose, onSave, onDelete }: { category: Cat
   const [name, setName] = useState(category?.name ?? '');
   return <div className="modal-backdrop"><section className="modal compact"><header><div><h2>{category ? '编辑分类' : '添加分类'}</h2><p>分类显示在左侧导航栏。</p></div><button className="icon-button" title="关闭" onClick={onClose}><X size={19} /></button></header><label><span>分类名称</span><input autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && onSave(category ? { ...category, name: name.trim() } : { id: uid(), name: name.trim(), order: 999 })} /></label><footer>{onDelete ? <button className="danger-button" onClick={onDelete}><Trash2 size={16} />删除分类</button> : <span />}<div><button className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={!name.trim()} onClick={() => onSave(category ? { ...category, name: name.trim() } : { id: uid(), name: name.trim(), order: 999 })}>保存</button></div></footer></section></div>;
 }
-function SettingsDialog({ onClose, onReveal, onReset }: { onClose(): void; onReveal(): void; onReset(): void }) { return <div className="modal-backdrop"><section className="modal compact"><header><div><h2>设置与数据</h2><p>软件清单仅保存在这台电脑。</p></div><button className="icon-button" title="关闭" onClick={onClose}><X size={19} /></button></header><div className="settings-list"><button onClick={onReveal}><FolderOpen size={19} /><span><strong>打开配置目录</strong><small>查看本机配置和上一版备份</small></span></button><button onClick={onReset}><Trash2 size={19} /><span><strong>清空应用列表</strong><small>不会删除电脑上的软件和文件</small></span></button><div><CircleHelp size={19} /><span><strong>隐私说明</strong><small>无账号、无遥测、无联网同步</small></span></div></div><footer><span /><button className="primary-button" onClick={onClose}>完成</button></footer></section></div>; }
+function SettingsDialog({ onClose, onReveal, onReset, onManage }: { onClose(): void; onReveal(): void; onReset(): void; onManage(): void }) { const [root, setRoot] = useState(''); useEffect(() => { void window.organizer?.getManagedRoot().then(setRoot); }, []); return <div className="modal-backdrop"><section className="modal compact"><header><div><h2>设置与数据</h2><p>软件清单仅保存在这台电脑。</p></div><button className="icon-button" title="关闭" onClick={onClose}><X size={19} /></button></header><div className="settings-list"><button onClick={async () => { const value = await window.organizer?.chooseManagedRoot(); if (value) setRoot(value); }}><HardDrive size={19} /><span><strong>统一收纳目录</strong><small>{root || '读取中'}</small></span></button><button onClick={onManage}><FolderOpen size={19} /><span><strong>整理现有入口</strong><small>逐项预览并确认可移动内容</small></span></button><button onClick={onReveal}><FolderOpen size={19} /><span><strong>打开配置目录</strong><small>查看本机配置和上一版备份</small></span></button><button onClick={onReset}><Trash2 size={19} /><span><strong>清空应用列表</strong><small>不会删除电脑上的软件和文件</small></span></button><div><CircleHelp size={19} /><span><strong>隐私说明</strong><small>无账号、无遥测、无联网同步</small></span></div></div><footer><span /><button className="primary-button" onClick={onClose}>完成</button></footer></section></div>; }
+
+function ManagedExistingDialog({ onClose, onChanged }: { onClose(): void; onChanged(config: AppConfig): void }) {
+  const [items, setItems] = useState<{ entryId: string; entryName: string; plan: ManagedMovePlan }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const refresh = async () => { setLoading(true); setError(''); try { setItems(await window.organizer?.previewExistingMoves() ?? []); } catch (reason) { setError(reason instanceof Error ? reason.message : '无法检查现有入口'); } finally { setLoading(false); } };
+  useEffect(() => { void refresh(); }, []);
+  const move = async (id: string) => { setBusy(id); setError(''); try { const saved = await window.organizer!.moveExistingEntry(id); onChanged(saved); await refresh(); } catch (reason) { setError(reason instanceof Error ? reason.message : '移动失败'); } finally { setBusy(''); } };
+  const eligible = items.filter((item) => item.plan.eligible);
+  const blocked = items.filter((item) => !item.plan.eligible);
+  return <div className="modal-backdrop"><section className="modal managed-existing-modal"><header><div><h2>整理现有入口</h2><p>逐项确认。安装版软件、Web Coding 和 AI 编程内容会保留原位。</p></div><button className="icon-button" title="关闭" onClick={onClose}><X size={19} /></button></header><div className="managed-existing-body">{loading ? <div className="empty-state"><span className="loader" />正在检查入口</div> : <><div className="managed-summary"><strong>{eligible.length} 项可移动</strong><span>{blocked.length} 项保留原位</span></div>{error && <div className="quick-add-error"><CircleHelp size={18} />{error}</div>}<div className="managed-list">{items.map((item) => <div className={'managed-row ' + (item.plan.eligible ? 'eligible' : 'blocked')} key={item.entryId}><div><strong>{item.entryName}</strong><small>{item.plan.sourceRoot}</small><p>{item.plan.reason}</p>{item.plan.eligible && <small>移动到：{item.plan.destination}</small>}{item.plan.runningProcesses.length > 0 && <p>请先关闭：{item.plan.runningProcesses.join('、')}</p>}</div><button className="secondary-button" disabled={!item.plan.eligible || item.plan.runningProcesses.length > 0 || Boolean(busy)} onClick={() => void move(item.entryId)}>{busy === item.entryId ? '移动中' : item.plan.eligible ? '确认移动' : '保留原位'}</button></div>)}</div></>}</div><footer><span>不会自动批量移动，也不会强制结束程序。</span><button className="primary-button" onClick={onClose}>完成</button></footer></section></div>;
+}
