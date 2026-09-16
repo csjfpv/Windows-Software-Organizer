@@ -41,6 +41,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: #17202a; }
 .search button { border: 0; display: grid; place-items: center; color: #798590; background: transparent; }
 .primary-button, .secondary-button, .danger-button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 14px; border-radius: 6px; font-weight: 600; }
+.icon-action { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #c9d0d7; border-radius: 6px; color: #52606c; background: #fff; }
+.icon-action:hover { color: #245fcf; border-color: #99b7ea; background: #f4f8ff; }
 .primary-button { border: 1px solid #245fd0; color: #fff; background: #2f6fed; }
 .primary-button:hover { background: #245fcf; }
 .secondary-button { border: 1px solid #c9d0d7; color: #35414d; background: #fff; }
@@ -71,6 +73,20 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(17,24,31,.55); }
 .modal { width: min(670px, 92vw); max-height: 90vh; overflow-y: auto; border: 1px solid #bac2ca; border-radius: 8px; background: #fff; box-shadow: 0 18px 50px rgba(0,0,0,.25); }
 .modal.compact { width: min(480px, 92vw); }
+.discovery-modal { width: min(760px, 94vw); }
+.discovery-body { display: grid; gap: 14px; margin: 18px 20px; }
+.discovery-list { max-height: min(420px, 52vh); overflow-y: auto; border: 1px solid #dde2e6; border-radius: 6px; }
+.discovery-row { min-height: 58px; display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-bottom: 1px solid #e8ebee; cursor: pointer; }
+.discovery-row:last-child { border-bottom: 0; }
+.discovery-row:hover { background: #f6f8fa; }
+.discovery-row input { width: 16px; height: 16px; margin-top: 2px; accent-color: #2f6fed; }
+.discovery-row span { min-width: 0; }
+.discovery-row strong, .discovery-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.discovery-row strong { font-size: 13px; }
+.discovery-row small { margin-top: 4px; color: #7b8792; font-size: 11px; }
+.discovery-status { min-height: 160px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 11px; color: #7b8792; font-size: 12px; text-align: center; }
+.discovery-status .loader { margin: 0; }
+.discovery-count { color: #74808a; font-size: 12px; }
 .modal header { display: flex; align-items: flex-start; padding: 18px 20px 14px; border-bottom: 1px solid #e0e4e8; }
 .modal header h2 { margin: 0; font-size: 18px; }
 .modal header p { margin: 4px 0 0; color: #73808b; font-size: 12px; }
