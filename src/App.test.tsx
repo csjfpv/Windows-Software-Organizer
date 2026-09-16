@@ -55,6 +55,9 @@ describe('软件启动台', () => {
     expect(screen.getByDisplayValue(/优先通过软件启动台的“添加路径”添加一个入口/)).toBe(prompt);
     expect(screen.getByDisplayValue(/开发工具/)).toBe(prompt);
     expect(screen.getByDisplayValue(/完整管理软件启动台配置/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/Vibe Coding 工具/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/项目产出软件/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/源码始终留在原项目文件夹/)).toBe(prompt);
     await waitFor(() => expect(screen.getByDisplayValue(/organizer-config\.json/)).toBe(prompt));
     fireEvent.click(screen.getByRole('button', { name: '复制提示词' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('完成前检查')));
