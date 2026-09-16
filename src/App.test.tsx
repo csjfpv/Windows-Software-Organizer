@@ -42,6 +42,21 @@ describe('软件启动台', () => {
     await waitFor(() => expect(window.organizer!.getConfig).toHaveBeenCalledTimes(2));
   });
 
+  it('copies a safe software-installation prompt for an AI agent', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<App />);
+    await screen.findByText('代码编辑器');
+    fireEvent.click(screen.getByRole('button', { name: '交给 AI 安装' }));
+    expect(await screen.findByRole('heading', { name: '交给 AI 安装' })).toBeInTheDocument();
+    const prompt = screen.getByRole('textbox', { name: 'AI 安装整理提示词' });
+    expect(screen.getByDisplayValue(/不要移动、复制、删除、重命名我的原软件/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/在软件启动台中使用“添加路径”创建入口/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/开发工具/)).toBe(prompt);
+    fireEvent.click(screen.getByRole('button', { name: '复制提示词' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining('完成前检查')));
+  });
+
   it('creates a categorized direct-launch entry from one local path', async () => {
     const saveConfig = vi.fn().mockImplementation(async (value) => value);
     const target = String.raw`C:\\Tools\\CodeApp.exe`;

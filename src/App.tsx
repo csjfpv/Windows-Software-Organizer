@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, Boxes, ChevronDown, ChevronUp, CircleHelp, Code2, ExternalLink, File, Folder, FolderOpen, Globe2, HardDrive, Image, Import, LayoutGrid, ListPlus, Pencil, Plus, Search, Settings, Star, Trash2, Upload, Wrench, X } from 'lucide-react';
 import { demoConfig } from './demo';
+import { AgentPromptDialog } from './AgentPromptDialog';
 import { DiscoveryDialog } from './DiscoveryDialog';
 import { QuickAddDialog } from './QuickAddDialog';
 import type { AppConfig, AppEntry, Category, DiscoveredApp, ResolvedPath, TargetType } from './types';
@@ -20,7 +21,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(demoConfig);
   const [selected, setSelected] = useState('all');
   const [query, setQuery] = useState('');
-  const [dialog, setDialog] = useState<'app' | 'quick-add' | 'category' | 'discovery' | 'settings' | null>(null);
+  const [dialog, setDialog] = useState<'app' | 'quick-add' | 'agent-prompt' | 'category' | 'discovery' | 'settings' | null>(null);
   const [editingApp, setEditingApp] = useState<AppEntry | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [icons, setIcons] = useState<Record<string, string>>({});
@@ -132,7 +133,7 @@ export default function App() {
       <div className="title-actions">
         <button className="icon-button" title="导入配置" onClick={async () => { try { const value = await window.organizer?.importConfig(); if (value) { setConfig(value); setSelected('all'); setQuery(''); setDialog(null); setIcons({}); flash('配置已导入'); } } catch (e) { flash(e instanceof Error ? e.message : '导入失败'); } }}><Import size={18} /></button>
         <button className="icon-button" title="导出配置" onClick={() => void runAction(async () => { if (await window.organizer?.exportConfig()) flash('配置已导出'); }, '导出失败')}><Upload size={18} /></button>
-        <button className="icon-button" title="设置" onClick={() => setDialog('settings')}><Settings size={18} /></button>
+        <button className="agent-prompt-button" title="复制交给 AI 安装软件的提示词" onClick={() => setDialog('agent-prompt')}>交给 AI 安装</button><button className="icon-button" title="设置" onClick={() => setDialog('settings')}><Settings size={18} /></button>
       </div>
     </header>
     <div className="workspace">
@@ -155,6 +156,7 @@ export default function App() {
         {loading ? <div className="empty-state"><span className="loader" />正在读取本地配置</div> : loadError ? <div className="empty-state"><CircleHelp size={42} /><h2>无法读取配置</h2><p>{loadError}</p><button className="primary-button" onClick={() => void loadConfig()}>重试</button></div> : shownApps.length ? <div className="app-grid">{shownApps.map((entry, index) => <AppCard key={entry.id} entry={entry} icon={icons[iconCacheKey(entry)]} color={palette[index % palette.length]} dragging={draggedAppId === entry.id} onDragStart={() => setDraggedAppId(entry.id)} onDrop={() => reorderApp(entry.id)} onDragEnd={() => setDraggedAppId(null)} onLaunch={() => launch(entry)} onEdit={() => { setEditingApp(entry); setDialog('app'); }} onDelete={() => removeApp(entry)} />)}</div> : <div className="empty-state"><AppWindow size={42} /><h2>{query ? '没有匹配结果' : '这个分类还是空的'}</h2><p>{query ? '换一个关键词试试。' : '添加程序、文件夹、文件或网页入口。'}</p>{!query && <button className="primary-button" onClick={() => setDialog('quick-add')}><Plus size={18} />添加路径</button>}</div>}
       </main>
     </div>
+    {dialog === 'agent-prompt' && <AgentPromptDialog categories={categories} onClose={() => setDialog(null)} />}
     {dialog === 'quick-add' && <QuickAddDialog categories={categories} onClose={() => setDialog(null)} onAdd={handleQuickAdd} />}
     {dialog === 'app' && <AppDialog categories={categories} entry={editingApp} onClose={() => setDialog(null)} onSave={(entry) => void runAction(async () => { const exists = config.apps.some((x) => x.id === entry.id); const savedEntry = exists ? entry : { ...entry, order: config.apps.filter((item) => item.categoryId === entry.categoryId).length }; await persist({ ...config, apps: exists ? config.apps.map((x) => x.id === entry.id ? savedEntry : x) : [...config.apps, savedEntry] }); setDialog(null); flash(exists ? '项目已更新' : '项目已添加'); }, '保存项目失败')} />}
     {dialog === 'discovery' && <DiscoveryDialog categories={categories} existingTargets={new Set(config.apps.map((entry) => entry.target.toLocaleLowerCase()))} onClose={() => setDialog(null)} onAdd={(items, categoryId) => void runAction(async () => { const offset = config.apps.filter((entry) => entry.categoryId === categoryId).length; const additions = items.map((item, index) => ({ id: uid(), categoryId, name: item.name, description: '来自开始菜单', target: item.target, targetType: 'executable' as const, args: [], workingDirectory: item.workingDirectory, iconPath: '', iconLookupAllowed: true, order: offset + index, launchCount: 0, lastLaunchedAt: null })); await persist({ ...config, apps: [...config.apps, ...additions] }); setDialog(null); flash('已添加 ' + additions.length + ' 个软件，并启用原软件图标'); }, '添加软件失败')} />}
