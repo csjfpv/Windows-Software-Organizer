@@ -133,7 +133,7 @@ export default function App() {
       <div className="title-actions">
         <button className="icon-button" title="导入配置" onClick={async () => { try { const value = await window.organizer?.importConfig(); if (value) { setConfig(value); setSelected('all'); setQuery(''); setDialog(null); setIcons({}); flash('配置已导入'); } } catch (e) { flash(e instanceof Error ? e.message : '导入失败'); } }}><Import size={18} /></button>
         <button className="icon-button" title="导出配置" onClick={() => void runAction(async () => { if (await window.organizer?.exportConfig()) flash('配置已导出'); }, '导出失败')}><Upload size={18} /></button>
-        <button className="agent-prompt-button" title="复制交给 AI 安装软件的提示词" onClick={() => setDialog('agent-prompt')}>交给 AI 安装</button><button className="icon-button" title="设置" onClick={() => setDialog('settings')}><Settings size={18} /></button>
+        <button className="agent-prompt-button" title="复制交给 AI 管理启动台的提示词" onClick={() => setDialog('agent-prompt')}>交给 AI 管理</button><button className="icon-button" title="设置" onClick={() => setDialog('settings')}><Settings size={18} /></button>
       </div>
     </header>
     <div className="workspace">

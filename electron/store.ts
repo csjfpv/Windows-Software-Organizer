@@ -10,6 +10,7 @@ export class ConfigStore {
     this.file = path.join(userDataPath, 'organizer-config.json');
     this.backup = path.join(userDataPath, 'organizer-config.previous.json');
   }
+  configPath(): string { return this.file; }
   async load(): Promise<AppConfig> {
     try { return parseConfigJson(await fs.readFile(this.file, 'utf8')); }
     catch (currentError) {

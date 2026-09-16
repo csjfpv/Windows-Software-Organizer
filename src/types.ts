@@ -5,7 +5,7 @@ export interface AppConfig { version: 1; categories: Category[]; apps: AppEntry[
 export interface DiscoveredApp { name: string; target: string; workingDirectory: string; }
 export interface ResolvedPath { name: string; target: string; targetType: Exclude<TargetType, 'url'>; workingDirectory: string; }
 export interface OrganizerApi {
-  getConfig(): Promise<AppConfig>; saveConfig(config: AppConfig): Promise<AppConfig>;
+  getConfig(): Promise<AppConfig>; saveConfig(config: AppConfig): Promise<AppConfig>; getConfigPath(): Promise<string>;
   discoverStartMenuApps(): Promise<DiscoveredApp[]>; resolvePath(value: string): Promise<ResolvedPath>;
   importConfig(): Promise<AppConfig | null>; exportConfig(): Promise<boolean>;
   pickTarget(type: Exclude<TargetType, 'url'>): Promise<string | null>; pickIcon(): Promise<string | null>;

@@ -110,6 +110,7 @@ app.whenReady().then(() => {
   store = new ConfigStore(app.getPath('userData'));
   ipcMain.handle('config:get', () => store.load());
   ipcMain.handle('config:save', (_event, config) => store.save(config));
+  ipcMain.handle('config:path', () => store.configPath());
   ipcMain.handle('apps:discover-start-menu', () => discoverStartMenuApps());
   ipcMain.handle('path:resolve', (_event, value: unknown) => resolveLocalPath(value));
   ipcMain.handle('config:import', async () => {
