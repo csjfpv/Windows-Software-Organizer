@@ -11,7 +11,7 @@ afterEach(() => {
 
 const organizerMock = (overrides: Partial<OrganizerApi>): OrganizerApi => ({
   getConfig: vi.fn().mockResolvedValue(demoConfig), saveConfig: vi.fn().mockImplementation(async (value) => value), getConfigPath: vi.fn().mockResolvedValue('C:\\Users\\Test\\AppData\\Roaming\\windows-software-organizer\\organizer-config.json'), importConfig: vi.fn().mockResolvedValue(null), exportConfig: vi.fn().mockResolvedValue(false),
-  discoverStartMenuApps: vi.fn().mockResolvedValue([]), resolvePath: vi.fn().mockRejectedValue(new Error('not configured')), pickTarget: vi.fn().mockResolvedValue(null), pickIcon: vi.fn().mockResolvedValue(null), getIcon: vi.fn().mockResolvedValue(null), launch: vi.fn().mockRejectedValue(new Error('not configured')), revealConfig: vi.fn().mockResolvedValue(undefined),
+  discoverStartMenuApps: vi.fn().mockResolvedValue([]), resolvePath: vi.fn().mockRejectedValue(new Error('not configured')), getManagedRoot: vi.fn().mockResolvedValue('C:\\软件启动台'), chooseManagedRoot: vi.fn().mockResolvedValue(null), previewManagedMove: vi.fn().mockRejectedValue(new Error('not configured')), managedAdd: vi.fn().mockRejectedValue(new Error('not configured')), previewExistingMoves: vi.fn().mockResolvedValue([]), moveExistingEntry: vi.fn().mockRejectedValue(new Error('not configured')), pickTarget: vi.fn().mockResolvedValue(null), pickIcon: vi.fn().mockResolvedValue(null), getIcon: vi.fn().mockResolvedValue(null), launch: vi.fn().mockRejectedValue(new Error('not configured')), revealConfig: vi.fn().mockResolvedValue(undefined),
   ...overrides
 });
 
@@ -51,8 +51,8 @@ describe('软件启动台', () => {
     fireEvent.click(screen.getByRole('button', { name: '交给 AI 管理' }));
     expect(await screen.findByRole('heading', { name: '交给 AI 管理' })).toBeInTheDocument();
     const prompt = screen.getByRole('textbox', { name: 'AI 安装整理提示词' });
-    expect(screen.getByDisplayValue(/不要移动、复制、删除、重命名我的原软件/)).toBe(prompt);
-    expect(screen.getByDisplayValue(/优先通过软件启动台的“添加路径”添加一个入口/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/不要自行用文件命令移动、复制、删除或重命名原内容/)).toBe(prompt);
+    expect(screen.getByDisplayValue(/必须使用“收纳并移动”/)).toBe(prompt);
     expect(screen.getByDisplayValue(/开发工具/)).toBe(prompt);
     expect(screen.getByDisplayValue(/完整管理软件启动台配置/)).toBe(prompt);
     expect(screen.getByDisplayValue(/Vibe Coding 工具/)).toBe(prompt);
@@ -73,10 +73,28 @@ describe('软件启动台', () => {
     fireEvent.change(screen.getByRole('textbox', { name: '要收纳的路径' }), { target: { value: target } });
     fireEvent.click(screen.getByTitle('识别路径'));
     expect(await screen.findByText('CodeApp')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '收纳并添加' }));
+    fireEvent.click(screen.getByRole('button', { name: '仅添加入口' }));
     await waitFor(() => expect(saveConfig).toHaveBeenCalled());
     const saved = saveConfig.mock.calls[0][0] as AppConfig;
     expect(saved.apps).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'CodeApp', target, categoryId: 'development', args: [], iconLookupAllowed: true })]));
+  });
+
+  it('previews and confirms managed relocation for a new path', async () => {
+    const target = String.raw`C:\Portable\Tool\Tool.exe`;
+    const managedAdd = vi.fn().mockResolvedValue(demoConfig);
+    window.organizer = organizerMock({
+      resolvePath: vi.fn().mockResolvedValue({ name: 'Tool', target, targetType: 'executable', workingDirectory: String.raw`C:\Portable\Tool` }),
+      previewManagedMove: vi.fn().mockResolvedValue({ eligible: true, reason: '将在同一磁盘内安全移动', source: target, sourceRoot: String.raw`C:\Portable\Tool`, destinationRoot: String.raw`C:\软件启动台\应用本体`, destination: String.raw`C:\软件启动台\应用本体\Tool`, resultingTarget: String.raw`C:\软件启动台\应用本体\Tool\Tool.exe`, resultingType: 'executable', workingDirectory: String.raw`C:\软件启动台\应用本体\Tool`, bucket: '应用本体', crossVolume: false, runningProcesses: [] }),
+      managedAdd
+    });
+    render(<App />);
+    await screen.findByText('代码编辑器');
+    fireEvent.click(screen.getByRole('button', { name: '添加路径' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '要收纳的路径' }), { target: { value: target } });
+    fireEvent.click(screen.getByTitle('识别路径'));
+    expect(await screen.findByText('可以统一收纳')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '收纳并移动' }));
+    await waitFor(() => expect(managedAdd).toHaveBeenCalled());
   });
 
   it('discovers start menu software and adds selected entries with original icons enabled', async () => {

@@ -3,8 +3,10 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { ConfigStore } from './store';
-import { AppEntry, AppConfig, distrustImportedIcons, TargetType } from './model';
+import { AppEntry, AppConfig, distrustImportedIcons, TargetType, validateConfig } from './model';
+import { executeManagedMove, ManagedPlan, MoveJournalStore, planManagedMove } from './managed-storage';
 
 const execFileAsync = promisify(execFile);
 type DiscoveredApp = { name: string; target: string; workingDirectory: string };
@@ -13,6 +15,9 @@ import { readConfigFile, writeConfigFile } from './config-file';
 
 let mainWindow: BrowserWindow | null = null;
 let store: ConfigStore;
+let moveJournal: MoveJournalStore;
+let userDataPath = '';
+let moveInProgress = false;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -70,6 +75,105 @@ async function resolveLocalPath(value: unknown): Promise<ResolvedPath> {
   return { name: name.slice(0, 80), target, targetType, workingDirectory: targetType === 'executable' ? path.dirname(target) : '' };
 }
 
+async function managedRoot() {
+  const settingsFile = path.join(userDataPath, 'managed-storage.json');
+  try {
+    const value = JSON.parse(await fs.readFile(settingsFile, 'utf8')) as { root?: unknown };
+    if (typeof value.root === 'string' && /^[a-zA-Z]:[\\/]/.test(value.root)) return path.resolve(value.root);
+  } catch { /* default below */ }
+  return path.join(path.parse(app.getPath('home')).root, '软件启动台');
+}
+
+async function saveManagedRoot(root: string) {
+  const settingsFile = path.join(userDataPath, 'managed-storage.json');
+  const temporary = settingsFile + '.tmp';
+  await fs.writeFile(temporary, JSON.stringify({ root }, null, 2), 'utf8');
+  await fs.rm(settingsFile, { force: true });
+  await fs.rename(temporary, settingsFile);
+}
+
+type ProcessPath = { name: string; executablePath: string };
+async function processPaths(): Promise<ProcessPath[]> {
+  const script = "Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | Select-Object @{n='name';e={$_.Name}},@{n='executablePath';e={$_.ExecutablePath}} | ConvertTo-Json -Compress";
+  try {
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true, maxBuffer: 512 * 1024 });
+    if (!stdout.trim()) return [];
+    const raw: unknown = JSON.parse(stdout); const values = Array.isArray(raw) ? raw : [raw];
+    return values.filter((item): item is ProcessPath => Boolean(item) && typeof item === 'object' && typeof (item as ProcessPath).name === 'string' && typeof (item as ProcessPath).executablePath === 'string');
+  } catch { throw new Error('无法确认相关程序是否仍在运行，请稍后重试'); }
+}
+function processesWithin(sourceRoot: string, processes: ProcessPath[]) {
+  const root = path.resolve(sourceRoot).toLocaleLowerCase();
+  return [...new Set(processes.filter((item) => { const executable = path.resolve(item.executablePath).toLocaleLowerCase(); return executable === root || executable.startsWith(root + path.sep); }).map((item) => item.name))];
+}
+async function runningProcesses(sourceRoot: string): Promise<string[]> { return processesWithin(sourceRoot, await processPaths()); }
+
+async function previewMove(target: string, targetType: Exclude<TargetType, 'url'>, categoryName: string) {
+  const plan = await planManagedMove({ target, targetType, categoryName, managedRoot: await managedRoot(), preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
+  return { ...plan, runningProcesses: plan.eligible ? await runningProcesses(plan.sourceRoot) : [] };
+}
+
+function relocatedEntry(entry: AppEntry, plan: ManagedPlan): AppEntry {
+  const iconRelative = entry.iconPath ? path.relative(plan.sourceRoot, entry.iconPath) : '';
+  const iconPath = entry.iconPath && iconRelative && !iconRelative.startsWith('..') && !path.isAbsolute(iconRelative)
+    ? path.join(plan.destination, iconRelative) : entry.iconPath;
+  return { ...entry, target: plan.resultingTarget, targetType: plan.resultingType, workingDirectory: plan.workingDirectory, iconPath };
+}
+
+async function transactMove(originalConfig: AppConfig, nextConfig: AppConfig, plan: ManagedPlan) {
+  if (moveInProgress || await moveJournal.load()) throw new Error('已有收纳任务正在处理，请稍后重试');
+  moveInProgress = true;
+  try {
+    const active = await runningProcesses(plan.sourceRoot);
+    if (active.length) throw new Error('请先正常关闭这些程序后重试：' + active.join('、'));
+    const journal = { id: randomUUID(), phase: 'prepared' as const, plan, originalConfig, nextConfig, createdAt: new Date().toISOString() };
+    await moveJournal.save(journal);
+    let operation;
+    try { operation = await executeManagedMove(plan); }
+    catch (error) { await moveJournal.clear().catch(() => undefined); throw error; }
+    try {
+      await moveJournal.save({ ...journal, phase: 'moved' });
+      const saved = await store.save(nextConfig);
+      await moveJournal.save({ ...journal, phase: 'config-saved' });
+      await operation.commit();
+      await moveJournal.clear();
+      return saved;
+    } catch (error) {
+      await operation.rollback().catch(() => undefined);
+      await store.save(originalConfig).catch(() => undefined);
+      await moveJournal.clear().catch(() => undefined);
+      throw error;
+    }
+  } finally { moveInProgress = false; }
+}
+
+async function recoverMove() {
+  const journal = await moveJournal.load();
+  if (!journal) return;
+  const root = path.resolve(await managedRoot());
+  const destination = path.resolve(journal.plan.destination);
+  const allowedBuckets = new Set(['应用本体', '项目源码', '项目产出软件', '资料']);
+  const relative = path.relative(root, destination);
+  if (!allowedBuckets.has(journal.plan.bucket) || !relative || relative.startsWith('..') || path.isAbsolute(relative)) throw new Error('迁移日志中的目标路径无效，请打开配置目录检查日志');
+  const destinationExists = Boolean(await fs.stat(journal.plan.destination).catch(() => null));
+  const sourceExists = Boolean(await fs.stat(journal.plan.sourceRoot).catch(() => null));
+  if (journal.phase === 'config-saved' && destinationExists) {
+    await store.save(journal.nextConfig);
+    if (sourceExists && journal.plan.crossVolume) {
+      const retired = journal.plan.sourceRoot + '.启动台迁移旧副本';
+      await fs.rename(journal.plan.sourceRoot, retired);
+      await fs.rm(retired, { recursive: true, force: true }).catch(() => undefined);
+    }
+  } else if (destinationExists && !sourceExists) {
+    await fs.rename(journal.plan.destination, journal.plan.sourceRoot);
+    await store.save(journal.originalConfig);
+  } else {
+    if (destinationExists && sourceExists) await fs.rm(journal.plan.destination, { recursive: true, force: true });
+    await store.save(journal.originalConfig);
+  }
+  await moveJournal.clear();
+}
+
 async function currentEntry(id: unknown): Promise<{ config: AppConfig; entry: AppEntry }> {
   if (typeof id !== 'string' || id.length > 100) throw new Error('应用 ID 无效');
   const config = await store.load();
@@ -106,13 +210,61 @@ async function launchEntry(entry: AppEntry) {
   child.unref();
 }
 
-app.whenReady().then(() => {
-  store = new ConfigStore(app.getPath('userData'));
+app.whenReady().then(async () => {
+  userDataPath = app.getPath('userData');
+  store = new ConfigStore(userDataPath);
+  moveJournal = new MoveJournalStore(path.join(userDataPath, 'managed-move-journal.json'));
+  await recoverMove();
   ipcMain.handle('config:get', () => store.load());
   ipcMain.handle('config:save', (_event, config) => store.save(config));
   ipcMain.handle('config:path', () => store.configPath());
   ipcMain.handle('apps:discover-start-menu', () => discoverStartMenuApps());
   ipcMain.handle('path:resolve', (_event, value: unknown) => resolveLocalPath(value));
+  ipcMain.handle('managed:root:get', () => managedRoot());
+  ipcMain.handle('managed:root:choose', async () => {
+    if (moveInProgress || await moveJournal.load()) throw new Error('收纳任务处理中，暂时不能更改目录');
+    const result = await dialog.showOpenDialog(mainWindow!, { title: '选择启动台统一收纳目录', defaultPath: await managedRoot(), properties: ['openDirectory', 'createDirectory'] });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const root = path.resolve(result.filePaths[0]);
+    await fs.mkdir(root, { recursive: true }); await saveManagedRoot(root); return root;
+  });
+  ipcMain.handle('managed:preview', async (_event, item: unknown, categoryName: unknown) => {
+    if (!item || typeof item !== 'object' || typeof categoryName !== 'string') throw new Error('收纳预检参数无效');
+    const value = item as Partial<ResolvedPath>;
+    if (typeof value.target !== 'string' || !['executable', 'file', 'folder'].includes(value.targetType ?? '')) throw new Error('收纳目标无效');
+    return previewMove(value.target, value.targetType as Exclude<TargetType, 'url'>, categoryName.slice(0, 40));
+  });
+  ipcMain.handle('managed:add', async (_event, rawEntry: unknown, _categoryName: unknown) => {
+    const original = await store.load();
+    const candidate = validateConfig({ ...original, apps: [...original.apps, rawEntry] });
+    const entry = candidate.apps.at(-1)!;
+    if (original.apps.some((item) => item.id === entry.id || item.target.toLocaleLowerCase() === entry.target.toLocaleLowerCase())) throw new Error('入口 ID 或目标已存在');
+    if (entry.targetType === 'url') throw new Error('网页入口不能移动');
+    const categoryName = original.categories.find((category) => category.id === entry.categoryId)?.name;
+    if (!categoryName) throw new Error('入口分类不存在');
+    const plan = await planManagedMove({ target: entry.target, targetType: entry.targetType, categoryName, managedRoot: await managedRoot(), preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
+    if (!plan.eligible) throw new Error(plan.reason);
+    const next = validateConfig({ ...original, apps: [...original.apps, relocatedEntry(entry, plan)] });
+    return transactMove(original, next, plan);
+  });
+  ipcMain.handle('managed:preview-existing', async () => {
+    const config = await store.load(); const processes = await processPaths(); const root = await managedRoot(); const result = [];
+    for (const entry of config.apps.filter((item) => item.targetType !== 'url')) {
+      const categoryName = config.categories.find((category) => category.id === entry.categoryId)?.name ?? '';
+      const plan = await planManagedMove({ target: entry.target, targetType: entry.targetType as Exclude<TargetType, 'url'>, categoryName, managedRoot: root, preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
+      result.push({ entryId: entry.id, entryName: entry.name, plan: { ...plan, runningProcesses: plan.eligible ? processesWithin(plan.sourceRoot, processes) : [] } });
+    }
+    return result;
+  });
+  ipcMain.handle('managed:move-existing', async (_event, id: unknown) => {
+    const { config: original, entry } = await currentEntry(id);
+    if (entry.targetType === 'url') throw new Error('网页入口不能移动');
+    const categoryName = original.categories.find((category) => category.id === entry.categoryId)?.name ?? '';
+    const plan = await planManagedMove({ target: entry.target, targetType: entry.targetType, categoryName, managedRoot: await managedRoot(), preserveWebCoding: /web 编程|vibe coding/i.test(categoryName) });
+    if (!plan.eligible) throw new Error(plan.reason);
+    const next = validateConfig({ ...original, apps: original.apps.map((item) => item.id === entry.id ? relocatedEntry(item, plan) : item) });
+    return transactMove(original, next, plan);
+  });
   ipcMain.handle('config:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
