@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AppWindow, Boxes, ChevronDown, ChevronUp, CircleHelp, Code2, ExternalLink, File, Folder, FolderOpen, Globe2, HardDrive, Import, LayoutGrid, Pencil, Plus, Search, Settings, Star, Trash2, Upload, Wrench, X } from 'lucide-react';
+import { AppWindow, Boxes, ChevronDown, ChevronUp, CircleHelp, Code2, ExternalLink, File, Folder, FolderOpen, Globe2, HardDrive, Image, Import, LayoutGrid, ListPlus, Pencil, Plus, Search, Settings, Star, Trash2, Upload, Wrench, X } from 'lucide-react';
 import { demoConfig } from './demo';
-import type { AppConfig, AppEntry, Category, TargetType } from './types';
+import { DiscoveryDialog } from './DiscoveryDialog';
+import type { AppConfig, AppEntry, Category, DiscoveredApp, TargetType } from './types';
 
 const uid = () => crypto.randomUUID();
 const typeLabel: Record<TargetType, string> = { executable: '程序', file: '文件', folder: '文件夹', url: '网页' };
@@ -18,7 +19,7 @@ export default function App() {
   const [config, setConfig] = useState<AppConfig>(demoConfig);
   const [selected, setSelected] = useState('all');
   const [query, setQuery] = useState('');
-  const [dialog, setDialog] = useState<'app' | 'category' | 'settings' | null>(null);
+  const [dialog, setDialog] = useState<'app' | 'category' | 'discovery' | 'settings' | null>(null);
   const [editingApp, setEditingApp] = useState<AppEntry | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [icons, setIcons] = useState<Record<string, string>>({});
@@ -86,6 +87,12 @@ export default function App() {
     } catch (error) { flash(error instanceof Error ? error.message : '启动失败'); }
   };
   const removeApp = async (entry: AppEntry) => { if (confirm('从整理工具中移除“' + entry.name + '”？本机程序不会被删除。')) await runAction(() => persist({ ...config, apps: config.apps.filter((item) => item.id !== entry.id) }), '移除失败'); };
+  const enableOriginalIcons = async () => {
+    const eligible = config.apps.filter((entry) => entry.targetType !== 'url' && entry.iconLookupAllowed !== true);
+    if (!eligible.length) return flash('当前本地入口已使用原软件图标');
+    await runAction(() => persist({ ...config, apps: config.apps.map((entry) => entry.targetType === 'url' ? entry : { ...entry, iconLookupAllowed: true }) }), '启用原软件图标失败');
+    flash('已启用 ' + eligible.length + ' 个本地入口的原软件图标');
+  };
   const removeCategory = async (category: Category) => {
     const count = config.apps.filter((item) => item.categoryId === category.id).length;
     if (count && !confirm('这个分类中有 ' + count + ' 个项目。确认同时从列表移除它们？本机文件不会被删除。')) return;
@@ -130,12 +137,13 @@ export default function App() {
       <main className="content">
         <div className="toolbar">
           <div><h1>{selectedName}</h1><p>{shownApps.length} 个项目</p></div>
-          <div className="toolbar-controls"><label className="search"><Search size={18} /><input aria-label="搜索应用" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索应用或项目" />{query && <button title="清除搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="primary-button" onClick={() => { setEditingApp(null); setDialog('app'); }}><Plus size={18} />添加项目</button></div>
+          <div className="toolbar-controls"><label className="search"><Search size={18} /><input aria-label="搜索应用" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索应用或项目" />{query && <button title="清除搜索" onClick={() => setQuery('')}><X size={15} /></button>}</label><button className="secondary-button" onClick={() => setDialog('discovery')}><ListPlus size={18} />从开始菜单添加</button><button className="icon-action" title="显示原软件图标" onClick={() => void enableOriginalIcons()}><Image size={18} /></button><button className="primary-button" onClick={() => { setEditingApp(null); setDialog('app'); }}><Plus size={18} />添加项目</button></div>
         </div>
         {loading ? <div className="empty-state"><span className="loader" />正在读取本地配置</div> : loadError ? <div className="empty-state"><CircleHelp size={42} /><h2>无法读取配置</h2><p>{loadError}</p><button className="primary-button" onClick={() => void loadConfig()}>重试</button></div> : shownApps.length ? <div className="app-grid">{shownApps.map((entry, index) => <AppCard key={entry.id} entry={entry} icon={icons[iconCacheKey(entry)]} color={palette[index % palette.length]} dragging={draggedAppId === entry.id} onDragStart={() => setDraggedAppId(entry.id)} onDrop={() => reorderApp(entry.id)} onDragEnd={() => setDraggedAppId(null)} onLaunch={() => launch(entry)} onEdit={() => { setEditingApp(entry); setDialog('app'); }} onDelete={() => removeApp(entry)} />)}</div> : <div className="empty-state"><AppWindow size={42} /><h2>{query ? '没有匹配结果' : '这个分类还是空的'}</h2><p>{query ? '换一个关键词试试。' : '添加程序、文件夹、文件或网页入口。'}</p>{!query && <button className="primary-button" onClick={() => setDialog('app')}><Plus size={18} />添加第一个项目</button>}</div>}
       </main>
     </div>
     {dialog === 'app' && <AppDialog categories={categories} entry={editingApp} onClose={() => setDialog(null)} onSave={(entry) => void runAction(async () => { const exists = config.apps.some((x) => x.id === entry.id); const savedEntry = exists ? entry : { ...entry, order: config.apps.filter((item) => item.categoryId === entry.categoryId).length }; await persist({ ...config, apps: exists ? config.apps.map((x) => x.id === entry.id ? savedEntry : x) : [...config.apps, savedEntry] }); setDialog(null); flash(exists ? '项目已更新' : '项目已添加'); }, '保存项目失败')} />}
+    {dialog === 'discovery' && <DiscoveryDialog categories={categories} existingTargets={new Set(config.apps.map((entry) => entry.target.toLocaleLowerCase()))} onClose={() => setDialog(null)} onAdd={(items, categoryId) => void runAction(async () => { const offset = config.apps.filter((entry) => entry.categoryId === categoryId).length; const additions = items.map((item, index) => ({ id: uid(), categoryId, name: item.name, description: '来自开始菜单', target: item.target, targetType: 'executable' as const, args: [], workingDirectory: item.workingDirectory, iconPath: '', iconLookupAllowed: true, order: offset + index, launchCount: 0, lastLaunchedAt: null })); await persist({ ...config, apps: [...config.apps, ...additions] }); setDialog(null); flash('已添加 ' + additions.length + ' 个软件，并启用原软件图标'); }, '添加软件失败')} />}
     {dialog === 'category' && <CategoryDialog category={editingCategory} onClose={() => setDialog(null)} onDelete={editingCategory ? () => void removeCategory(editingCategory) : undefined} onSave={(category) => void runAction(async () => { const exists = config.categories.some((x) => x.id === category.id); await persist({ ...config, categories: exists ? config.categories.map((x) => x.id === category.id ? category : x) : [...config.categories, category] }); setDialog(null); }, '保存分类失败')} />}
     {dialog === 'settings' && <SettingsDialog onClose={() => setDialog(null)} onReveal={() => void runAction(async () => { await window.organizer?.revealConfig(); }, '打开配置目录失败')} onReset={() => void runAction(async () => { if (confirm('清空当前列表并恢复默认分类？')) { await persist({ ...demoConfig, apps: [] }); setDialog(null); } }, '重置失败')} />}
     {notice && <div className="toast">{notice}</div>}
@@ -162,8 +170,8 @@ function AppDialog({ categories, entry, onClose, onSave }: { categories: Categor
     <label><span>类型</span><select value={form.targetType} onChange={(e) => update({ targetType: e.target.value as TargetType, target: '' })}><option value="executable">程序</option><option value="folder">文件夹</option><option value="file">文件</option><option value="url">网页</option></select></label>
     <label className="full"><span>目标</span><div className="input-action"><input value={form.target} onChange={(e) => update({ target: e.target.value })} placeholder={form.targetType === 'url' ? 'https://example.com' : '选择或输入本地路径'} />{form.targetType !== 'url' && <button title="浏览" onClick={async () => { const value = await window.organizer?.pickTarget(form.targetType as Exclude<TargetType, 'url'>); if (value) update({ target: value, name: form.name || value.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || '' }); }}><FolderOpen size={17} /></button>}</div></label>
     {form.targetType === 'executable' && <><label className="full"><span>启动参数 <small>每行一个参数</small></span><textarea value={argsText} onChange={(e) => setArgsText(e.target.value)} rows={3} placeholder={"--profile\nwork"} /></label><label className="full"><span>工作目录</span><input value={form.workingDirectory} onChange={(e) => update({ workingDirectory: e.target.value })} placeholder="留空时使用程序所在目录" /></label></>}
-    <label className="full"><span>自定义图标</span><div className="input-action"><input value={form.iconPath} onChange={(e) => update({ iconPath: e.target.value })} placeholder="可选，默认使用类型图标" /><button title="选择图标" onClick={async () => { const value = await window.organizer?.pickIcon(); if (value) update({ iconPath: value }); }}><FolderOpen size={17} /></button></div></label>
-    <label className="full checkbox-row"><input type="checkbox" checked={form.iconLookupAllowed === true} onChange={(e) => update({ iconLookupAllowed: e.target.checked })} /><span>启用本地图标预览 <small>Windows 将访问该条目的目标或图标路径</small></span></label>
+    <label className="full"><span>自定义图标</span><div className="input-action"><input value={form.iconPath} onChange={(e) => update({ iconPath: e.target.value })} placeholder="可选；启用下方开关后默认显示原软件图标" /><button title="选择图标" onClick={async () => { const value = await window.organizer?.pickIcon(); if (value) update({ iconPath: value }); }}><FolderOpen size={17} /></button></div></label>
+    <label className="full checkbox-row"><input type="checkbox" checked={form.iconLookupAllowed === true} onChange={(e) => update({ iconLookupAllowed: e.target.checked })} /><span>显示原软件图标 <small>Windows 将访问该条目的目标或图标路径</small></span></label>
   </div><footer><button className="secondary-button" onClick={onClose}>取消</button><button className="primary-button" disabled={!form.name.trim() || !form.target.trim() || !form.categoryId} onClick={save}>保存</button></footer></section></div>;
 }
 
