@@ -11,7 +11,7 @@ afterEach(() => {
 
 const organizerMock = (overrides: Partial<OrganizerApi>): OrganizerApi => ({
   getConfig: vi.fn().mockResolvedValue(demoConfig), saveConfig: vi.fn().mockImplementation(async (value) => value), importConfig: vi.fn().mockResolvedValue(null), exportConfig: vi.fn().mockResolvedValue(false),
-  discoverStartMenuApps: vi.fn().mockResolvedValue([]), pickTarget: vi.fn().mockResolvedValue(null), pickIcon: vi.fn().mockResolvedValue(null), getIcon: vi.fn().mockResolvedValue(null), launch: vi.fn().mockRejectedValue(new Error('not configured')), revealConfig: vi.fn().mockResolvedValue(undefined),
+  discoverStartMenuApps: vi.fn().mockResolvedValue([]), resolvePath: vi.fn().mockRejectedValue(new Error('not configured')), pickTarget: vi.fn().mockResolvedValue(null), pickIcon: vi.fn().mockResolvedValue(null), getIcon: vi.fn().mockResolvedValue(null), launch: vi.fn().mockRejectedValue(new Error('not configured')), revealConfig: vi.fn().mockResolvedValue(undefined),
   ...overrides
 });
 
@@ -40,6 +40,22 @@ describe('软件启动台', () => {
     expect(screen.getByText('配置文件损坏')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     await waitFor(() => expect(window.organizer!.getConfig).toHaveBeenCalledTimes(2));
+  });
+
+  it('creates a categorized direct-launch entry from one local path', async () => {
+    const saveConfig = vi.fn().mockImplementation(async (value) => value);
+    const target = String.raw`C:\\Tools\\CodeApp.exe`;
+    window.organizer = organizerMock({ resolvePath: vi.fn().mockResolvedValue({ name: 'CodeApp', target, targetType: 'executable', workingDirectory: String.raw`C:\\Tools` }), saveConfig });
+    render(<App />);
+    await screen.findByText('代码编辑器');
+    fireEvent.click(screen.getByRole('button', { name: '添加路径' }));
+    fireEvent.change(screen.getByRole('textbox', { name: '要收纳的路径' }), { target: { value: target } });
+    fireEvent.click(screen.getByTitle('识别路径'));
+    expect(await screen.findByText('CodeApp')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '收纳并添加' }));
+    await waitFor(() => expect(saveConfig).toHaveBeenCalled());
+    const saved = saveConfig.mock.calls[0][0] as AppConfig;
+    expect(saved.apps).toEqual(expect.arrayContaining([expect.objectContaining({ name: 'CodeApp', target, categoryId: 'development', args: [], iconLookupAllowed: true })]));
   });
 
   it('discovers start menu software and adds selected entries with original icons enabled', async () => {

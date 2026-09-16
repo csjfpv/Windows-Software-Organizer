@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld('organizer', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config: unknown) => ipcRenderer.invoke('config:save', config),
   discoverStartMenuApps: () => ipcRenderer.invoke('apps:discover-start-menu'),
+  resolvePath: (value: string) => ipcRenderer.invoke('path:resolve', value),
   importConfig: () => ipcRenderer.invoke('config:import'),
   exportConfig: () => ipcRenderer.invoke('config:export'),
   pickTarget: (type: 'executable' | 'file' | 'folder') => ipcRenderer.invoke('picker:target', type),
