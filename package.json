@@ -1,6 +1,6 @@
 {
   "name": "windows-software-organizer",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "A local Windows software and project launchpad.",
   "main": "dist-electron/main.js",
   "author": "csjfpv",
