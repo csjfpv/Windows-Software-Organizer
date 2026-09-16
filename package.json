@@ -1,7 +1,7 @@
 {
   "name": "windows-software-organizer",
-  "version": "0.1.5",
-  "description": "A privacy-first Windows application and project launcher.",
+  "version": "0.1.6",
+  "description": "A local Windows software and project launchpad.",
   "main": "dist-electron/main.js",
   "author": "csjfpv",
   "license": "MIT",
@@ -40,7 +40,7 @@
   },
   "build": {
     "appId": "io.github.csjfpv.windowssoftwareorganizer",
-    "productName": "Windows软件整理工具",
+    "productName": "软件启动台",
     "icon": "build/icon.ico",
     "directories": {
       "output": "release"

@@ -1,4 +1,4 @@
-# Windows软件整理工具
+# 软件启动台
 
 一个给 Windows 整理常用软件、文件夹和项目入口的小工具。
 
@@ -22,8 +22,8 @@
 
 Release 页面有两个版本：
 
-- `Windows-Software-Organizer-Setup.exe`：安装版
-- `Windows-Software-Organizer-Portable.exe`：便携版，下载后直接运行
+- `Software-Launchpad-Setup.exe`：安装版
+- `Software-Launchpad-Portable.exe`：便携版，下载后直接运行
 
 也可以下载 `SHA256SUMS.txt` 校验文件。当前安装包没有代码签名，第一次运行时 Windows 可能会弹出未知发布者提示，只建议从本仓库的 Release 页面下载。
 

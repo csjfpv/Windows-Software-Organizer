@@ -13,7 +13,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280, height: 800, minWidth: 960, minHeight: 620,
     backgroundColor: '#f4f6f8',
-    title: 'Windows软件整理工具',
+    title: '软件启动台',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: true
