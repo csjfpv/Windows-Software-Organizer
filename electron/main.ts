@@ -8,6 +8,7 @@ import { AppEntry, AppConfig, distrustImportedIcons, TargetType } from './model'
 
 const execFileAsync = promisify(execFile);
 type DiscoveredApp = { name: string; target: string; workingDirectory: string };
+type ResolvedPath = { name: string; target: string; targetType: Exclude<TargetType, 'url'>; workingDirectory: string };
 import { readConfigFile, writeConfigFile } from './config-file';
 
 let mainWindow: BrowserWindow | null = null;
@@ -55,6 +56,20 @@ async function discoverStartMenuApps(): Promise<DiscoveredApp[]> {
     .slice(0, 300);
 }
 
+async function resolveLocalPath(value: unknown): Promise<ResolvedPath> {
+  if (typeof value !== 'string' || !value.trim() || value.length > 2048) throw new Error('路径无效');
+  const source = value.trim().replace(/^"|"$/g, '');
+  if (!/^[a-zA-Z]:[\\/]/.test(source)) throw new Error('请选择本机磁盘中的路径');
+  const target = path.resolve(source);
+  const stat = await fs.stat(target).catch(() => null);
+  if (!stat) throw new Error('路径不存在或无法访问');
+  const targetType: Exclude<TargetType, 'url'> = stat.isDirectory() ? 'folder' : path.extname(target).toLocaleLowerCase() === '.exe' ? 'executable' : 'file';
+  const base = path.basename(target);
+  const name = targetType === 'executable' ? base.replace(/\.exe$/i, '') : base;
+  if (!name) throw new Error('无法识别路径名称');
+  return { name: name.slice(0, 80), target, targetType, workingDirectory: targetType === 'executable' ? path.dirname(target) : '' };
+}
+
 async function currentEntry(id: unknown): Promise<{ config: AppConfig; entry: AppEntry }> {
   if (typeof id !== 'string' || id.length > 100) throw new Error('应用 ID 无效');
   const config = await store.load();
@@ -96,6 +111,7 @@ app.whenReady().then(() => {
   ipcMain.handle('config:get', () => store.load());
   ipcMain.handle('config:save', (_event, config) => store.save(config));
   ipcMain.handle('apps:discover-start-menu', () => discoverStartMenuApps());
+  ipcMain.handle('path:resolve', (_event, value: unknown) => resolveLocalPath(value));
   ipcMain.handle('config:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, { title: '导入配置', properties: ['openFile'], filters: [{ name: 'JSON 配置', extensions: ['json'] }] });
     if (result.canceled || !result.filePaths[0]) return null;
