@@ -3,6 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('organizer', {
   getConfig: () => ipcRenderer.invoke('config:get'),
   saveConfig: (config: unknown) => ipcRenderer.invoke('config:save', config),
+  getConfigPath: () => ipcRenderer.invoke('config:path'),
   discoverStartMenuApps: () => ipcRenderer.invoke('apps:discover-start-menu'),
   resolvePath: (value: string) => ipcRenderer.invoke('path:resolve', value),
   importConfig: () => ipcRenderer.invoke('config:import'),
